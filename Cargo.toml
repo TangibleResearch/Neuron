@@ -2,5 +2,7 @@
 name = "neuron"
 version = "0.1.0"
 edition = "2024"
-
+[[bin]]
+name = "neuron"
+path = "src/neuron.rs"
 [dependencies]

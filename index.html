@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Neuron Research</title>
+
+  <style>
+   * {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  color: #111111;
+}
+
+/* =========================
+   NAVIGATION
+   ========================= */
+
+nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 14px 8%;
+
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid #e5e5e5;
+
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.logo {
+  width: 95px;
+  height: auto;
+}
+
+nav ul {
+  list-style: none;
+  display: flex;
+  gap: 10px;
+
+  margin: 0;
+  padding: 0;
+}
+
+nav a {
+  color: #555555;
+  text-decoration: none;
+
+  padding: 10px 14px;
+  border-radius: 6px;
+
+  transition: 0.2s;
+}
+
+nav a:hover {
+  color: #000000;
+  background: #f2f2f2;
+}
+
+
+/* =========================
+   HERO
+   ========================= */
+
+.hero {
+  min-height: 85vh;
+
+  display: flex;
+  align-items: center;
+
+  padding: 80px 10%;
+
+  background:
+    radial-gradient(
+      circle at 75% 35%,
+      #f0f0f0 0%,
+      transparent 35%
+    ),
+    #ffffff;
+}
+
+.hero-content {
+  max-width: 850px;
+}
+
+.status {
+  display: inline-block;
+
+  padding: 7px 12px;
+  margin-bottom: 20px;
+
+  background: #f5f5f5;
+  border: 1px solid #dddddd;
+  border-radius: 6px;
+
+  color: #555555;
+  font-size: 14px;
+}
+
+.hero h1 {
+  margin: 0 0 20px;
+
+  font-size: clamp(3rem, 8vw, 6rem);
+  letter-spacing: -3px;
+
+  color: #000000;
+}
+
+.hero p {
+  max-width: 700px;
+
+  margin: 0;
+
+  color: #555555;
+  font-size: 1.25rem;
+  line-height: 1.7;
+}
+
+.hero-buttons {
+  margin-top: 32px;
+
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.button {
+  display: inline-block;
+
+  padding: 13px 20px;
+
+  border-radius: 7px;
+  text-decoration: none;
+  font-weight: bold;
+
+  transition: 0.2s;
+}
+
+.button-primary {
+  background: #111111;
+  color: #ffffff;
+}
+
+.button-primary:hover {
+  background: #333333;
+}
+
+.button-secondary {
+  border: 1px solid #cccccc;
+  color: #111111;
+}
+
+.button-secondary:hover {
+  background: #f5f5f5;
+}
+
+
+/* =========================
+   SECTIONS
+   ========================= */
+
+section {
+  padding: 90px 10%;
+}
+
+section:nth-of-type(even) {
+  background: #fafafa;
+}
+
+section h2 {
+  margin-bottom: 15px;
+
+  font-size: 2.4rem;
+  color: #111111;
+}
+
+section > p {
+  max-width: 750px;
+
+  color: #666666;
+  line-height: 1.7;
+}
+
+
+/* =========================
+   RESEARCH CARDS
+   ========================= */
+
+.research-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(auto-fit, minmax(230px, 1fr));
+
+  gap: 18px;
+  margin-top: 40px;
+}
+
+.card {
+  background: #ffffff;
+
+  border: 1px solid #e1e1e1;
+  border-radius: 10px;
+
+  padding: 24px;
+
+  transition:
+    transform 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+
+  border-color: #bbbbbb;
+
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.07);
+}
+
+.card h3 {
+  margin-top: 0;
+  color: #111111;
+}
+
+.card p {
+  color: #666666;
+  line-height: 1.6;
+}
+
+
+/* =========================
+   DEVELOPMENT STATUS
+   ========================= */
+
+.status-table {
+  margin-top: 35px;
+
+  max-width: 700px;
+
+  border: 1px solid #dddddd;
+  border-radius: 10px;
+
+  overflow: hidden;
+
+  background: #ffffff;
+}
+
+.status-row {
+  display: flex;
+  justify-content: space-between;
+
+  padding: 16px 20px;
+
+  border-bottom: 1px solid #eeeeee;
+}
+
+.status-row:last-child {
+  border-bottom: none;
+}
+
+.status-value {
+  color: #666666;
+}
+
+
+/* =========================
+   FOOTER
+   ========================= */
+
+footer {
+  padding: 35px 10%;
+
+  border-top: 1px solid #e5e5e5;
+
+  background: #ffffff;
+
+  color: #888888;
+  font-size: 14px;
+}
+
+
+/* =========================
+   MOBILE
+   ========================= */
+
+@media (max-width: 700px) {
+
+  nav {
+    padding: 12px 5%;
+  }
+
+  .logo {
+    width: 75px;
+  }
+
+  nav ul {
+    gap: 2px;
+  }
+
+  nav a {
+    padding: 8px;
+    font-size: 14px;
+  }
+
+  .hero,
+  section {
+    padding-left: 6%;
+    padding-right: 6%;
+  }
+}
+  </style>
+</head>
+
+<body>
+
+  <!-- Navigation -->
+  <nav>
+
+    <div class="nav-left">
+
+      <img
+        src="Neuron.png"
+        alt="Neuron Logo"
+        class="logo"
+      >
+
+      <ul>
+        <li><a href="#home">Home</a></li>
+        <li><a href="#research">Research</a></li>
+        <li><a href="#updates">Updates</a></li>
+        <li><a href="#status">Status</a></li>
+      </ul>
+
+    </div>
+
+  </nav>
+
+
+  <!-- Hero -->
+  <main id="home" class="hero">
+
+    <div class="hero-content">
+
+      <div class="status">
+        Neuron Architecture Research
+      </div>
+
+      <h1>Neuron</h1>
+
+      <p>
+        An experimental processor architecture exploring
+        AI-oriented computing, matrix acceleration,
+        hardware multithreading, and specialized execution.
+      </p>
+
+      <div class="hero-buttons">
+
+        <a
+          href="#research"
+          class="button button-primary"
+        >
+          Explore Research
+        </a>
+
+        <a
+          href="https://github.com/TangibleResearch/Neuron"
+          class="button button-secondary"
+        >
+          View Source
+        </a>
+
+      </div>
+
+    </div>
+
+  </main>
+
+
+  <!-- About -->
+  <section>
+
+    <h2>We are Team Neuron.</h2>
+
+    <p>
+      Neuron is a research project focused on investigating
+      how a processor architecture can be designed around
+      modern artificial intelligence and machine learning
+      workloads from the ground up.
+    </p>
+
+  </section>
+
+
+  <!-- Research -->
+  <section id="research">
+
+    <h2>Research</h2>
+
+    <p>
+      Neuron combines general-purpose CPU design with
+      specialized hardware intended for highly parallel and
+      matrix-heavy workloads.
+    </p>
+
+    <div class="research-grid">
+
+      <div class="card">
+        <h3>Core Architecture</h3>
+
+        <p>
+          Research into the Neuron execution pipeline,
+          registers, scalar execution, SIMD, scheduling,
+          and load/store architecture.
+        </p>
+      </div>
+
+
+      <div class="card">
+        <h3>Matrix Engine</h3>
+
+        <p>
+          A dedicated matrix execution system constructed
+          around arrays of multiply-accumulate units.
+        </p>
+      </div>
+
+
+      <div class="card">
+        <h3>ISA</h3>
+
+        <p>
+          Development of the Neuron instruction set,
+          including scalar, vector, AI, and matrix
+          instructions.
+        </p>
+      </div>
+
+
+      <div class="card">
+        <h3>CoolThreads</h3>
+
+        <p>
+          Research into hardware multithreading and
+          keeping execution resources productive during
+          highly parallel workloads.
+        </p>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- Updates -->
+  <section id="updates">
+
+    <h2>Research Updates</h2>
+
+    <p>
+      Development notes, architectural experiments,
+      emulator results, and major Neuron milestones
+      will appear here.
+    </p>
+
+  </section>
+
+
+  <!-- Status -->
+  <section id="status">
+
+    <h2>Development Status</h2>
+
+    <div class="status-table">
+
+      <div class="status-row">
+        <span>CPU Emulator</span>
+        <span class="status-value">In Development</span>
+      </div>
+
+      <div class="status-row">
+        <span>Neuron ISA</span>
+        <span class="status-value">Experimental</span>
+      </div>
+
+      <div class="status-row">
+        <span>Matrix Engine</span>
+        <span class="status-value">Prototype</span>
+      </div>
+
+      <div class="status-row">
+        <span>Hardware Implementation</span>
+        <span class="status-value">Research Stage</span>
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <footer>
+    Neuron Research — Tangible Research
+  </footer>
+
+</body>
+</html>

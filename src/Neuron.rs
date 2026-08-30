@@ -16,13 +16,113 @@ pub struct ProcessingElement {
     pub target_node_id: Option<usize>,
     pub target_buffer_slot: u8, // 0 for Input A, 1 for Input B
 }
+const N: usize = 4;
+
+type Matrix = [[i32; N]; N];
+
+#[derive(Debug, Clone, Copy)]
+struct MatrixEngine {
+    macs: [[Mac; N]; N],
+    a_tile: Matrix,
+    b_tile: Matrix,
+    output: Matrix,
+    k: usize,
+    busy: bool,
+    done: bool,
+}
+
+impl MatrixEngine {
+    fn new() -> Self {
+        Self {
+            macs: [[Mac::new(); N]; N],
+            a_tile: [[0; N]; N],
+            b_tile: [[0; N]; N],
+            output: [[0; N]; N],
+            k: 0,
+            busy: false,
+            done: false,
+        }
+    }
+
+    fn load_tiles(&mut self, a: Matrix, b: Matrix) {
+        if self.busy {
+            panic!("Cannot load Matrix Engine while it is busy");
+        }
+        self.a_tile = a;
+        self.b_tile = b;
+        self.done = false;
+    }
+
+    fn start(&mut self) {
+        if self.busy {
+            panic!("Matrix Engine is already busy");
+        }
+
+        for row in 0..N {
+            for col in 0..N {
+                self.macs[row][col].reset();
+            }
+        }
+
+        self.output = [[0; N]; N];
+        self.k = 0;
+        self.busy = true;
+        self.done = false;
+    }
+
+    /// Simulate one Matrix Engine cycle.
+    ///
+    /// All 16 MACs conceptually execute in parallel. The emulator loops over
+    /// them sequentially, but one call represents one hardware cycle.
+    fn step_cycle(&mut self) {
+        if !self.busy || self.done {
+            return;
+        }
+
+        for i in 0..N {
+            for j in 0..N {
+                let a = i8::try_from(self.a_tile[i][self.k])
+                    .expect("Matrix Engine input A must fit in INT8");
+                let b = i8::try_from(self.b_tile[self.k][j])
+                    .expect("Matrix Engine input B must fit in INT8");
+                self.macs[i][j].step(a, b);
+            }
+        }
+
+        self.k += 1;
+
+        if self.k == N {
+            for i in 0..N {
+                for j in 0..N {
+                    self.output[i][j] = self.macs[i][j].accumulator();
+                }
+            }
+            self.busy = false;
+            self.done = true;
+        }
+    }
+
+    fn read_output(&self) -> Option<Matrix> {
+        if self.done { Some(self.output) } else { None }
+    }
+}
+
+impl Default for MatrixEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct AiAccelerator {
     pub processing_grid: Vec<ProcessingElement>,
     pub output_bus: Vec<Option<f32>>,
 }
+
 #[derive(Debug, Default)]
 struct NeuronCpu {
+    pub mac: Mac,
+    matrix_engine: MatrixEngine,
+
     // =========================
     // Scalar General Registers
     // =========================
@@ -56,12 +156,12 @@ struct NeuronCpu {
     v7: [u32; 8],
 
     // =========================
-    // Matrix / Tensor Registers
+    // Matrix Registers
     // =========================
-    m0: [[f32; 4]; 4],
-    m1: [[f32; 4]; 4],
-    m2: [[f32; 4]; 4],
-    m3: [[f32; 4]; 4],
+    m0: Matrix,
+    m1: Matrix,
+    m2: Matrix,
+    m3: Matrix,
 
     // =========================
     // Predicate Registers
@@ -88,8 +188,43 @@ struct NeuronCpu {
     tensor_ctrl: u32,
     tensor_status: u32,
 
-    // CPU execution state.
     halted: bool,
+}
+
+// ====================================================
+// MAC - Multiply-Accumulate Coprocessor
+// ====================================================
+
+#[derive(Debug, Clone, Copy)]
+pub struct Mac {
+    accumulator: i32,
+}
+
+impl Mac {
+    pub const fn new() -> Self {
+        Self { accumulator: 0 }
+    }
+
+    /// ACC = ACC + (A * B)
+    pub fn step(&mut self, a: i8, b: i8) -> i32 {
+        let product = (a as i32) * (b as i32);
+        self.accumulator = self.accumulator.wrapping_add(product);
+        self.accumulator
+    }
+
+    pub fn accumulator(&self) -> i32 {
+        self.accumulator
+    }
+
+    pub fn reset(&mut self) {
+        self.accumulator = 0;
+    }
+}
+
+impl Default for Mac {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // =========================
@@ -160,6 +295,30 @@ impl NeuronCpu {
             _ => {
                 panic!("Invalid Neuron scalar register: R{}", register);
             }
+        }
+    }
+
+    // ============================================================
+    // MATRIX REGISTER ACCESS
+    // ============================================================
+
+    fn read_matrix(&self, register: u8) -> Matrix {
+        match register {
+            0 => self.m0,
+            1 => self.m1,
+            2 => self.m2,
+            3 => self.m3,
+            _ => panic!("Invalid Neuron matrix register: M{}", register),
+        }
+    }
+
+    fn write_matrix(&mut self, register: u8, value: Matrix) {
+        match register {
+            0 => self.m0 = value,
+            1 => self.m1 = value,
+            2 => self.m2 = value,
+            3 => self.m3 = value,
+            _ => panic!("Invalid Neuron matrix register: M{}", register),
         }
     }
 
@@ -940,6 +1099,129 @@ impl NeuronCpu {
                     return_address
                 );
             }
+            // ====================================================
+            // 0x82 - MAC (Multiply-Accumulate)
+            //
+            // Encoding:
+            // 82 <register A> <register B>
+            //
+            // Operation:
+            // ACC = ACC + (A * B)
+            // ====================================================
+
+            0x82 => {
+                let address_a = self.fetch_u8(memory);
+                let address_b = self.fetch_u8(memory);
+
+                let value_a = self.read_scalar(address_a) as i8;
+                let value_b = self.read_scalar(address_b) as i8;
+
+                let accumulator = self.mac.step(
+                    value_a,
+                    value_b,
+                );
+
+                println!(
+                    "  -> MAC R{}, R{} | {} * {} | ACC = {}",
+                    address_a,
+                    address_b,
+                    value_a,
+                    value_b,
+                    accumulator
+                );
+            }
+
+            // ====================================================
+            // 0x83 - MACCLR
+            //
+            // Operation:
+            // ACC = 0
+            // ====================================================
+
+            0x83 => {
+                self.mac.reset();
+
+                println!(
+                    "  -> MACCLR | ACC = 0"
+                );
+            }
+
+            // ====================================================
+            // 0x84 - MACREAD
+            //
+            // Encoding:
+            // 84 <destination register>
+            //
+            // Operation:
+            // destination = ACC
+            // ====================================================
+
+            0x84 => {
+                let destination = self.fetch_u8(memory);
+
+                let accumulator = self.mac.accumulator();
+
+                self.write_scalar(
+                    destination,
+                    accumulator as u32,
+                );
+
+                self.update_zero_negative(
+                    accumulator as u32,
+                );
+
+                println!(
+                    "  -> MACREAD R{} | ACC = {}",
+                    destination,
+                    accumulator
+                );
+            }
+
+            // ====================================================
+            // 0x90 - MMUL (4x4 INT8 matrix multiply, INT32 output)
+            //
+            // Encoding:
+            // 90 <destination matrix> <source A matrix> <source B matrix>
+            //
+            // Example:
+            // MMUL M2, M0, M1
+            //
+            // Operation:
+            // M2 = M0 x M1
+            // ====================================================
+
+            0x90 => {
+                let destination = self.fetch_u8(memory);
+                let source_a = self.fetch_u8(memory);
+                let source_b = self.fetch_u8(memory);
+
+                let a = self.read_matrix(source_a);
+                let b = self.read_matrix(source_b);
+
+                self.matrix_engine.load_tiles(a, b);
+                self.matrix_engine.start();
+
+                let mut cycles = 0;
+                while self.matrix_engine.busy {
+                    self.matrix_engine.step_cycle();
+                    cycles += 1;
+                }
+
+                let result = self
+                    .matrix_engine
+                    .read_output()
+                    .expect("MMUL finished without an output");
+
+                self.write_matrix(destination, result);
+
+                println!(
+                    "  -> MMUL M{}, M{}, M{} | {} matrix cycles",
+                    destination,
+                    source_a,
+                    source_b,
+                    cycles
+                );
+            }
 
             // ====================================================
             // 0xFF - HALT
@@ -965,168 +1247,95 @@ impl NeuronCpu {
 
 fn main() {
     let memory_size: u32 = 1024;
-
-    let mut virtual_ram =
-        vec![0_u8; memory_size as usize];
+    let mut virtual_ram = vec![0_u8; memory_size as usize];
 
     // ============================================================
     // TEST PROGRAM
     // ============================================================
     //
-    // MOVI R1, 500
-    // MOVI R2, 200
+    // 1. Test scalar MAC:
+    //    MOVI R1, 2
+    //    MOVI R2, 5
+    //    MACCLR
+    //    MAC R1, R2
+    //    MAC R1, R2
+    //    MACREAD R3       -> 20
     //
-    // ADD R3, R1, R2
+    // 2. Test Matrix Engine:
+    //    MMUL M2, M0, M1
     //
-    // MOVI R4, 700
-    //
-    // CMP R3, R4
-    //
-    // JNZ fail
-    //
-    // PUSH R3
-    // POP R5
-    //
-    // HALT
-    //
-    // Expected:
-    //
-    // R3 = 700
-    // R5 = 700
-    // ZERO flag = 1
-    //
+    // 3. HALT
     // ============================================================
 
-    let machine_code: [u8; 35] = [
-        // MOVI R1, 500
-        0x10,
-        0x01,
-        0xF4,
-        0x01,
-        0x00,
-        0x00,
+    let machine_code: [u8; 26] = [
+        // MOVI R1, 2
+        0x10, 0x01, 0x02, 0x00, 0x00, 0x00,
 
-        // MOVI R2, 200
-        0x10,
-        0x02,
-        0xC8,
-        0x00,
-        0x00,
-        0x00,
+        // MOVI R2, 5
+        0x10, 0x02, 0x05, 0x00, 0x00, 0x00,
 
-        // ADD R3, R1, R2
-        0x20,
-        0x03,
-        0x01,
-        0x02,
+        // MACCLR
+        0x83,
 
-        // MOVI R4, 700
-        0x10,
-        0x04,
-        0xBC,
-        0x02,
-        0x00,
-        0x00,
+        // MAC R1, R2
+        0x82, 0x01, 0x02,
 
-        // CMP R3, R4
-        0x60,
-        0x03,
-        0x04,
+        // MAC R1, R2
+        0x82, 0x01, 0x02,
 
-        // JNZ address 32
-        0x72,
-        0x20,
-        0x00,
-        0x00,
-        0x00,
+        // MACREAD R3
+        0x84, 0x03,
 
-        // PUSH R3
-        0x50,
-        0x03,
-
-        // POP R5
-        0x51,
-        0x05,
+        // MMUL M2, M0, M1
+        0x90, 0x02, 0x00, 0x01,
 
         // HALT
         0xFF,
     ];
 
-    virtual_ram[0..machine_code.len()]
-        .copy_from_slice(&machine_code);
+    virtual_ram[0..machine_code.len()].copy_from_slice(&machine_code);
 
-    let mut cpu =
-        NeuronCpu::new(memory_size);
+    let mut cpu = NeuronCpu::new(memory_size);
 
-    println!(
-        "--- Neuron32 Boot ---"
-    );
+    // Host-side setup for the first MMUL ISA test.
+    // Later, matrix load/store instructions can move these through memory.
+    cpu.m0 = [
+        [1, 2, 3, 4],
+        [5, 6, 7, 8],
+        [9, 10, 11, 12],
+        [13, 14, 15, 16],
+    ];
 
-    println!(
-        "{cpu:?}\n"
-    );
+    cpu.m1 = [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+    ];
+
+    println!("--- Neuron32 Boot ---");
 
     while !cpu.halted {
-        cpu.step(
-            &mut virtual_ram,
-        );
-
+        cpu.step(&mut virtual_ram);
         println!(
             "PC={} SP={} STATUS={:#010X}",
-            cpu.pc,
-            cpu.sp,
-            cpu.status
+            cpu.pc, cpu.sp, cpu.status
         );
-
         println!();
     }
 
-    println!(
-        "--- Final Neuron State ---"
-    );
+    println!("--- Final Neuron State ---");
+    println!("R1 = {}", cpu.read_scalar(1));
+    println!("R2 = {}", cpu.read_scalar(2));
+    println!("R3 = {}", cpu.read_scalar(3));
+    println!("MAC ACC = {}", cpu.mac.accumulator());
 
-    println!(
-        "R1 = {}",
-        cpu.read_scalar(1)
-    );
+    println!("M0 = {:?}", cpu.m0);
+    println!("M1 = {:?}", cpu.m1);
+    println!("M2 = {:?}", cpu.m2);
 
-    println!(
-        "R2 = {}",
-        cpu.read_scalar(2)
-    );
+    assert_eq!(cpu.read_scalar(3), 20);
+    assert_eq!(cpu.m2, cpu.m0); // M1 is identity, so M0 x M1 = M0.
 
-    println!(
-        "R3 = {}",
-        cpu.read_scalar(3)
-    );
-
-    println!(
-        "R4 = {}",
-        cpu.read_scalar(4)
-    );
-
-    println!(
-        "R5 = {}",
-        cpu.read_scalar(5)
-    );
-
-    println!(
-        "ZERO      = {}",
-        cpu.flag(FLAG_ZERO)
-    );
-
-    println!(
-        "NEGATIVE  = {}",
-        cpu.flag(FLAG_NEGATIVE)
-    );
-
-    println!(
-        "CARRY     = {}",
-        cpu.flag(FLAG_CARRY)
-    );
-
-    println!(
-        "OVERFLOW  = {}",
-        cpu.flag(FLAG_OVERFLOW)
-    );
+    println!("All Neuron tests passed.");
 }
