@@ -1,5 +1,7 @@
 # Tangible Neuron
 
+[![CI/CD](https://github.com/TangibleResearch/Neuron/actions/workflows/ci.yml/badge.svg)](https://github.com/TangibleResearch/Neuron/actions/workflows/ci.yml)
+
 **Tangible Neuron** is an experimental AI-first processor architecture developed as a research project by Tangible Research.
 
 Neuron explores how a processor can be designed around modern artificial intelligence workloads rather than treating AI acceleration as an afterthought. The project currently focuses on processor architecture, instruction-set design, vector and matrix execution, dataflow acceleration, compiler optimization, and hardware/software co-design.
@@ -69,6 +71,19 @@ Architectural decisions are expected to evolve through implementation, simulatio
 **Early research and architecture development.**
 
 The ISA, execution model, accelerator architecture, and compiler design are experimental and subject to significant change.
+
+## Development
+
+Run the same checks used by CI locally:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --all-targets --locked
+cargo build --release --locked
+```
+
+GitHub Actions runs these checks for every push and pull request. After a successful push to `main`, it publishes `index.html` and `Neuron.png` to GitHub Pages. In the repository's **Settings → Pages**, select **GitHub Actions** as the publishing source once before the first deployment.
 
 ## Tangible Research
 
