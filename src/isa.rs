@@ -1,0 +1,64 @@
+pub const OP_MOVI: u8 = 0x10;
+pub const OP_MOV: u8 = 0x11;
+pub const OP_ADD: u8 = 0x20;
+pub const OP_SUB: u8 = 0x21;
+pub const OP_MUL: u8 = 0x22;
+pub const OP_DIV: u8 = 0x23;
+pub const OP_MOD: u8 = 0x24;
+pub const OP_AND: u8 = 0x30;
+pub const OP_OR: u8 = 0x31;
+pub const OP_XOR: u8 = 0x32;
+pub const OP_NOT: u8 = 0x33;
+pub const OP_SHL: u8 = 0x34;
+pub const OP_SHR: u8 = 0x35;
+pub const OP_LOAD: u8 = 0x40;
+pub const OP_STORE: u8 = 0x41;
+pub const OP_PUSH: u8 = 0x50;
+pub const OP_POP: u8 = 0x51;
+pub const OP_CMP: u8 = 0x60;
+pub const OP_JMP: u8 = 0x70;
+pub const OP_JZ: u8 = 0x71;
+pub const OP_JNZ: u8 = 0x72;
+pub const OP_CALL: u8 = 0x80;
+pub const OP_RET: u8 = 0x81;
+pub const OP_MAC: u8 = 0x82;
+pub const OP_MACCLR: u8 = 0x83;
+pub const OP_MACREAD: u8 = 0x84;
+pub const OP_MMUL: u8 = 0x90;
+pub const OP_OUT: u8 = 0xA0;
+pub const OP_HALT: u8 = 0xFF;
+
+pub const fn opcode_name(opcode: u8) -> &'static str {
+    match opcode {
+        OP_MOVI => "MOVI",
+        OP_MOV => "MOV",
+        OP_ADD => "ADD",
+        OP_SUB => "SUB",
+        OP_MUL => "MUL",
+        OP_DIV => "DIV",
+        OP_MOD => "MOD",
+        OP_AND => "AND",
+        OP_OR => "OR",
+        OP_XOR => "XOR",
+        OP_NOT => "NOT",
+        OP_SHL => "SHL",
+        OP_SHR => "SHR",
+        OP_LOAD => "LOAD",
+        OP_STORE => "STORE",
+        OP_PUSH => "PUSH",
+        OP_POP => "POP",
+        OP_CMP => "CMP",
+        OP_JMP => "JMP",
+        OP_JZ => "JZ",
+        OP_JNZ => "JNZ",
+        OP_CALL => "CALL",
+        OP_RET => "RET",
+        OP_MAC => "MAC",
+        OP_MACCLR => "MACCLR",
+        OP_MACREAD => "MACREAD",
+        OP_MMUL => "MMUL",
+        OP_OUT => "OUT",
+        OP_HALT => "HALT",
+        _ => "UNKNOWN",
+    }
+}

@@ -1,17 +1,17 @@
-use crate::mac::Mac;
-use crate::matrix::{Matrix, MatrixEngine};
-use crate::scalar_alu::ScalarAlu;
+use crate::debug::trace::TraceEvent;
+use crate::isa::*;
+use crate::issuer::IssueResult;
+use crate::issuer::Issuer;
+use crate::matrix::Matrix;
 
 pub const FLAG_ZERO: u32 = 1 << 0;
 pub const FLAG_NEGATIVE: u32 = 1 << 1;
 pub const FLAG_CARRY: u32 = 1 << 2;
 pub const FLAG_OVERFLOW: u32 = 1 << 3;
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct NeuronCpu {
-    mac: Mac,
-    matrix_engine: MatrixEngine,
-    scalar_alu: ScalarAlu,
+    issuer: Issuer,
 
     // =========================
     // Scalar General Registers
@@ -260,10 +260,6 @@ impl NeuronCpu {
         }
     }
 
-    fn flag(&self, flag: u32) -> bool {
-        (self.status & flag) != 0
-    }
-
     fn update_zero_negative(&mut self, value: u32) {
         self.set_flag(FLAG_ZERO, value == 0);
 
@@ -295,16 +291,18 @@ impl NeuronCpu {
     // CPU EXECUTION
     // ============================================================
 
-    pub fn step(&mut self, memory: &mut [u8]) {
+    fn issue(&mut self, operation: u8, arguments: &[u32]) -> IssueResult {
+        self.issuer.issue(operation, arguments, self.status)
+    }
+
+    pub fn step(&mut self, memory: &mut [u8]) -> Option<TraceEvent> {
         if self.halted {
-            return;
+            return None;
         }
 
-        let opcode_address = self.pc;
+        let instruction_pc = self.pc;
 
         let opcode = self.fetch_u8(memory);
-
-        println!("[FETCH] opcode {:#04X} at PC {}", opcode, opcode_address);
 
         match opcode {
             // ====================================================
@@ -314,16 +312,16 @@ impl NeuronCpu {
             //
             // [10][dst][imm32]
             // ====================================================
-            0x10 => {
+            OP_MOVI => {
                 let destination = self.fetch_u8(memory);
 
                 let immediate = self.fetch_u32(memory);
 
-                self.write_scalar(destination, immediate);
+                let value = self.issue(OP_MOVI, &[immediate]).value();
 
-                self.update_zero_negative(immediate);
+                self.write_scalar(destination, value);
 
-                println!("  -> MOVI R{}, {}", destination, immediate);
+                self.update_zero_negative(value);
             }
 
             // ====================================================
@@ -333,23 +331,29 @@ impl NeuronCpu {
             //
             // [11][dst][src]
             // ====================================================
-            0x11 => {
+            OP_MOV => {
                 let destination = self.fetch_u8(memory);
                 let source = self.fetch_u8(memory);
 
-                let value = self.read_scalar(source);
+                let source_value = self.read_scalar(source);
+                let value = self.issue(OP_MOV, &[source_value]).value();
 
                 self.write_scalar(destination, value);
-
-                println!("  -> MOV R{}, R{}", destination, source);
             }
+            OP_OUT => {
+                let source = self.fetch_u8(memory);
+                let value = self.read_scalar(source);
 
+                let character = self.issue(OP_OUT, &[value]).output();
+
+                print!("{}", character);
+            }
             // ====================================================
             // 0x20 - ADD
             //
             // ADD destination, source_a, source_b
             // ====================================================
-            0x20 => {
+            OP_ADD => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
@@ -358,7 +362,7 @@ impl NeuronCpu {
                 let b = self.read_scalar(source_b);
 
                 // Send the operands to the physical Scalar ALU.
-                let alu_result = self.scalar_alu.add(a, b);
+                let alu_result = self.issue(OP_ADD, &[a, b]).scalar();
 
                 // Write the ALU result back to the register file.
                 self.write_scalar(destination, alu_result.value);
@@ -368,17 +372,12 @@ impl NeuronCpu {
                 self.set_flag(FLAG_NEGATIVE, alu_result.negative);
                 self.set_flag(FLAG_CARRY, alu_result.carry);
                 self.set_flag(FLAG_OVERFLOW, alu_result.overflow);
-
-                println!(
-                    "  -> ADD R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, alu_result.value
-                );
             }
 
             // ====================================================
             // 0x21 - SUB
             // ====================================================
-            0x21 => {
+            OP_SUB => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
@@ -386,7 +385,7 @@ impl NeuronCpu {
                 let a = self.read_scalar(source_a);
                 let b = self.read_scalar(source_b);
 
-                let alu_result = self.scalar_alu.sub(a, b);
+                let alu_result = self.issue(OP_SUB, &[a, b]).scalar();
                 self.write_scalar(destination, alu_result.value);
 
                 self.update_zero_negative(alu_result.value);
@@ -394,17 +393,12 @@ impl NeuronCpu {
                 self.set_flag(FLAG_CARRY, alu_result.carry);
 
                 self.set_flag(FLAG_OVERFLOW, alu_result.overflow);
-
-                println!(
-                    "  -> SUB R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, alu_result.value
-                );
             }
 
             // ====================================================
             // 0x22 - MUL
             // ====================================================
-            0x22 => {
+            OP_MUL => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
@@ -412,7 +406,7 @@ impl NeuronCpu {
                 let a = self.read_scalar(source_a);
                 let b = self.read_scalar(source_b);
 
-                let alu_result = self.scalar_alu.mul(a, b);
+                let alu_result = self.issue(OP_MUL, &[a, b]).scalar();
 
                 self.write_scalar(destination, alu_result.value);
 
@@ -420,17 +414,12 @@ impl NeuronCpu {
                 self.set_flag(FLAG_NEGATIVE, alu_result.negative);
                 self.set_flag(FLAG_CARRY, alu_result.carry);
                 self.set_flag(FLAG_OVERFLOW, alu_result.overflow);
-
-                println!(
-                    "  -> MUL R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, alu_result.value
-                );
             }
 
             // ====================================================
             // 0x23 - DIV
             // ====================================================
-            0x23 => {
+            OP_DIV => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
@@ -438,7 +427,7 @@ impl NeuronCpu {
                 let a = self.read_scalar(source_a);
                 let b = self.read_scalar(source_b);
 
-                let alu_result = self.scalar_alu.div(a, b);
+                let alu_result = self.issue(OP_DIV, &[a, b]).scalar();
 
                 self.write_scalar(destination, alu_result.value);
 
@@ -446,17 +435,12 @@ impl NeuronCpu {
                 self.set_flag(FLAG_NEGATIVE, alu_result.negative);
                 self.set_flag(FLAG_CARRY, alu_result.carry);
                 self.set_flag(FLAG_OVERFLOW, alu_result.overflow);
-
-                println!(
-                    "  -> DIV R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, alu_result.value
-                );
             }
 
             // ====================================================
             // 0x24 - MOD
             // ====================================================
-            0x24 => {
+            OP_MOD => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
@@ -464,7 +448,7 @@ impl NeuronCpu {
                 let a = self.read_scalar(source_a);
                 let b = self.read_scalar(source_b);
 
-                let alu_result = self.scalar_alu.modulo(a, b);
+                let alu_result = self.issue(OP_MOD, &[a, b]).scalar();
 
                 self.write_scalar(destination, alu_result.value);
 
@@ -472,70 +456,56 @@ impl NeuronCpu {
                 self.set_flag(FLAG_NEGATIVE, alu_result.negative);
                 self.set_flag(FLAG_CARRY, alu_result.carry);
                 self.set_flag(FLAG_OVERFLOW, alu_result.overflow);
-
-                println!(
-                    "  -> MOD R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, alu_result.value
-                );
             }
             // ====================================================
             // 0x30 - AND
             // ====================================================
-            0x30 => {
+            OP_AND => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
 
-                let result = self.read_scalar(source_a) & self.read_scalar(source_b);
+                let a = self.read_scalar(source_a);
+                let b = self.read_scalar(source_b);
+                let result = self.issue(OP_AND, &[a, b]).value();
 
                 self.write_scalar(destination, result);
 
                 self.update_zero_negative(result);
-
-                println!(
-                    "  -> AND R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, result
-                );
             }
 
             // ====================================================
             // 0x31 - OR
             // ====================================================
-            0x31 => {
+            OP_OR => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
 
-                let result = self.read_scalar(source_a) | self.read_scalar(source_b);
+                let a = self.read_scalar(source_a);
+                let b = self.read_scalar(source_b);
+                let result = self.issue(OP_OR, &[a, b]).value();
 
                 self.write_scalar(destination, result);
 
                 self.update_zero_negative(result);
-
-                println!(
-                    "  -> OR R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, result
-                );
             }
 
             // ====================================================
             // 0x32 - XOR
             // ====================================================
-            0x32 => {
+            OP_XOR => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
 
-                let result = self.read_scalar(source_a) ^ self.read_scalar(source_b);
+                let a = self.read_scalar(source_a);
+                let b = self.read_scalar(source_b);
+                let result = self.issue(OP_XOR, &[a, b]).value();
 
                 self.write_scalar(destination, result);
 
                 self.update_zero_negative(result);
-
-                println!(
-                    "  -> XOR R{}, R{}, R{} = {}",
-                    destination, source_a, source_b, result
-                );
             }
 
             // ====================================================
@@ -543,65 +513,52 @@ impl NeuronCpu {
             //
             // NOT destination, source
             // ====================================================
-            0x33 => {
+            OP_NOT => {
                 let destination = self.fetch_u8(memory);
                 let source = self.fetch_u8(memory);
 
-                let result = !self.read_scalar(source);
+                let value = self.read_scalar(source);
+                let result = self.issue(OP_NOT, &[value]).value();
 
                 self.write_scalar(destination, result);
 
                 self.update_zero_negative(result);
-
-                println!("  -> NOT R{}, R{} = {}", destination, source, result);
             }
 
             // ====================================================
             // 0x34 - SHL
             // ====================================================
-            0x34 => {
+            OP_SHL => {
                 let destination = self.fetch_u8(memory);
                 let source = self.fetch_u8(memory);
                 let amount_register = self.fetch_u8(memory);
 
                 let value = self.read_scalar(source);
 
-                let amount = self.read_scalar(amount_register) & 31;
-
-                let result = value.wrapping_shl(amount);
+                let amount = self.read_scalar(amount_register);
+                let result = self.issue(OP_SHL, &[value, amount]).value();
 
                 self.write_scalar(destination, result);
 
                 self.update_zero_negative(result);
-
-                println!(
-                    "  -> SHL R{}, R{}, R{} = {}",
-                    destination, source, amount_register, result
-                );
             }
 
             // ====================================================
             // 0x35 - SHR
             // ====================================================
-            0x35 => {
+            OP_SHR => {
                 let destination = self.fetch_u8(memory);
                 let source = self.fetch_u8(memory);
                 let amount_register = self.fetch_u8(memory);
 
                 let value = self.read_scalar(source);
 
-                let amount = self.read_scalar(amount_register) & 31;
-
-                let result = value.wrapping_shr(amount);
+                let amount = self.read_scalar(amount_register);
+                let result = self.issue(OP_SHR, &[value, amount]).value();
 
                 self.write_scalar(destination, result);
 
                 self.update_zero_negative(result);
-
-                println!(
-                    "  -> SHR R{}, R{}, R{} = {}",
-                    destination, source, amount_register, result
-                );
             }
 
             // ====================================================
@@ -609,20 +566,16 @@ impl NeuronCpu {
             //
             // LOAD destination, address_register
             // ====================================================
-            0x40 => {
+            OP_LOAD => {
                 let destination = self.fetch_u8(memory);
                 let address_register = self.fetch_u8(memory);
 
                 let address = self.read_scalar(address_register);
 
-                let value = Self::read_u32(memory, address);
+                let loaded = Self::read_u32(memory, address);
+                let value = self.issue(OP_LOAD, &[loaded]).value();
 
                 self.write_scalar(destination, value);
-
-                println!(
-                    "  -> LOAD R{}, [R{}] = {}",
-                    destination, address_register, value
-                );
             }
 
             // ====================================================
@@ -630,7 +583,7 @@ impl NeuronCpu {
             //
             // STORE address_register, source
             // ====================================================
-            0x41 => {
+            OP_STORE => {
                 let address_register = self.fetch_u8(memory);
 
                 let source = self.fetch_u8(memory);
@@ -639,35 +592,34 @@ impl NeuronCpu {
 
                 let value = self.read_scalar(source);
 
-                Self::write_u32(memory, address, value);
+                self.issue(OP_STORE, &[address, value]).expect_none();
 
-                println!("  -> STORE [R{}], R{}", address_register, source);
+                Self::write_u32(memory, address, value);
             }
 
             // ====================================================
             // 0x50 - PUSH
             // ====================================================
-            0x50 => {
+            OP_PUSH => {
                 let source = self.fetch_u8(memory);
 
                 let value = self.read_scalar(source);
 
-                self.push_u32(memory, value);
+                self.issue(OP_PUSH, &[value]).expect_none();
 
-                println!("  -> PUSH R{} ({})", source, value);
+                self.push_u32(memory, value);
             }
 
             // ====================================================
             // 0x51 - POP
             // ====================================================
-            0x51 => {
+            OP_POP => {
                 let destination = self.fetch_u8(memory);
 
-                let value = self.pop_u32(memory);
+                let popped = self.pop_u32(memory);
+                let value = self.issue(OP_POP, &[popped]).value();
 
                 self.write_scalar(destination, value);
-
-                println!("  -> POP R{} ({})", destination, value);
             }
 
             // ====================================================
@@ -677,7 +629,7 @@ impl NeuronCpu {
             //
             // Updates STATUS.
             // ====================================================
-            0x60 => {
+            OP_CMP => {
                 let source_a = self.fetch_u8(memory);
 
                 let source_b = self.fetch_u8(memory);
@@ -686,13 +638,11 @@ impl NeuronCpu {
 
                 let b = self.read_scalar(source_b);
 
-                let result = a.wrapping_sub(b);
+                let result = self.issue(OP_CMP, &[a, b]).value();
 
                 self.update_zero_negative(result);
 
                 self.set_flag(FLAG_CARRY, a >= b);
-
-                println!("  -> CMP R{}, R{}", source_a, source_b);
             }
 
             // ====================================================
@@ -700,41 +650,34 @@ impl NeuronCpu {
             //
             // JMP absolute_address
             // ====================================================
-            0x70 => {
+            OP_JMP => {
                 let address = self.fetch_u32(memory);
 
-                self.pc = address;
-
-                println!("  -> JMP {}", address);
+                self.pc = self
+                    .issue(OP_JMP, &[address])
+                    .branch()
+                    .expect("JMP must produce a branch target");
             }
 
             // ====================================================
             // 0x71 - JZ
             // ====================================================
-            0x71 => {
+            OP_JZ => {
                 let address = self.fetch_u32(memory);
 
-                if self.flag(FLAG_ZERO) {
-                    self.pc = address;
-
-                    println!("  -> JZ {} TAKEN", address);
-                } else {
-                    println!("  -> JZ {} NOT TAKEN", address);
+                if let Some(target) = self.issue(OP_JZ, &[address]).branch() {
+                    self.pc = target;
                 }
             }
 
             // ====================================================
             // 0x72 - JNZ
             // ====================================================
-            0x72 => {
+            OP_JNZ => {
                 let address = self.fetch_u32(memory);
 
-                if !self.flag(FLAG_ZERO) {
-                    self.pc = address;
-
-                    println!("  -> JNZ {} TAKEN", address);
-                } else {
-                    println!("  -> JNZ {} NOT TAKEN", address);
+                if let Some(target) = self.issue(OP_JNZ, &[address]).branch() {
+                    self.pc = target;
                 }
             }
 
@@ -743,27 +686,29 @@ impl NeuronCpu {
             //
             // CALL absolute_address
             // ====================================================
-            0x80 => {
+            OP_CALL => {
                 let address = self.fetch_u32(memory);
 
                 let return_address = self.pc;
 
                 self.push_u32(memory, return_address);
 
-                self.pc = address;
-
-                println!("  -> CALL {}", address);
+                self.pc = self
+                    .issue(OP_CALL, &[address])
+                    .branch()
+                    .expect("CALL must produce a branch target");
             }
 
             // ====================================================
             // 0x81 - RET
             // ====================================================
-            0x81 => {
+            OP_RET => {
                 let return_address = self.pop_u32(memory);
 
-                self.pc = return_address;
-
-                println!("  -> RET {}", return_address);
+                self.pc = self
+                    .issue(OP_RET, &[return_address])
+                    .branch()
+                    .expect("RET must produce a branch target");
             }
             // ====================================================
             // 0x82 - MAC (Multiply-Accumulate)
@@ -774,19 +719,15 @@ impl NeuronCpu {
             // Operation:
             // ACC = ACC + (A * B)
             // ====================================================
-            0x82 => {
+            OP_MAC => {
                 let address_a = self.fetch_u8(memory);
                 let address_b = self.fetch_u8(memory);
 
                 let value_a = self.read_scalar(address_a) as i8;
                 let value_b = self.read_scalar(address_b) as i8;
 
-                let accumulator = self.mac.step(value_a, value_b);
-
-                println!(
-                    "  -> MAC R{}, R{} | {} * {} | ACC = {}",
-                    address_a, address_b, value_a, value_b, accumulator
-                );
+                self.issue(OP_MAC, &[value_a as u32, value_b as u32])
+                    .expect_none();
             }
 
             // ====================================================
@@ -795,10 +736,8 @@ impl NeuronCpu {
             // Operation:
             // ACC = 0
             // ====================================================
-            0x83 => {
-                self.mac.reset();
-
-                println!("  -> MACCLR | ACC = 0");
+            OP_MACCLR => {
+                self.issue(OP_MACCLR, &[]).expect_none();
             }
 
             // ====================================================
@@ -810,16 +749,14 @@ impl NeuronCpu {
             // Operation:
             // destination = ACC
             // ====================================================
-            0x84 => {
+            OP_MACREAD => {
                 let destination = self.fetch_u8(memory);
 
-                let accumulator = self.mac.accumulator();
+                let accumulator = self.issue(OP_MACREAD, &[]).value();
 
-                self.write_scalar(destination, accumulator as u32);
+                self.write_scalar(destination, accumulator);
 
-                self.update_zero_negative(accumulator as u32);
-
-                println!("  -> MACREAD R{} | ACC = {}", destination, accumulator);
+                self.update_zero_negative(accumulator);
             }
 
             // ====================================================
@@ -834,7 +771,7 @@ impl NeuronCpu {
             // Operation:
             // M2 = M0 x M1
             // ====================================================
-            0x90 => {
+            OP_MMUL => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
@@ -842,48 +779,29 @@ impl NeuronCpu {
                 let a = self.read_matrix(source_a);
                 let b = self.read_matrix(source_b);
 
-                self.matrix_engine.load_tiles(a, b);
-                self.matrix_engine.start();
-
-                let mut cycles = 0;
-                while self.matrix_engine.is_busy() {
-                    self.matrix_engine.step_cycle();
-                    cycles += 1;
-                }
-
-                let result = self
-                    .matrix_engine
-                    .read_output()
-                    .expect("MMUL finished without an output");
+                let result = self.issuer.issue_matrix(OP_MMUL, a, b).matrix();
 
                 self.write_matrix(destination, result);
-
-                println!(
-                    "  -> MMUL M{}, M{}, M{} | {} matrix cycles",
-                    destination, source_a, source_b, cycles
-                );
             }
 
             // ====================================================
             // 0xFF - HALT
             // ====================================================
-            0xFF => {
+            OP_HALT => {
+                self.issue(OP_HALT, &[]).expect_halt();
                 self.halted = true;
-
-                println!("  -> HALT");
             }
 
             _ => {
                 panic!("Unknown Neuron opcode: {:#04X}", opcode);
             }
         }
-    }
 
-    /// Runs instructions until the CPU executes `HALT`.
-    pub fn run(&mut self, memory: &mut [u8]) {
-        while !self.halted {
-            self.step(memory);
-        }
+        Some(TraceEvent {
+            pc: instruction_pc,
+            opcode,
+            status: self.status,
+        })
     }
 
     pub const fn is_halted(&self) -> bool {
@@ -911,7 +829,7 @@ impl NeuronCpu {
     }
 
     pub const fn mac_accumulator(&self) -> i32 {
-        self.mac.accumulator()
+        self.issuer.mac_accumulator()
     }
 
     pub const fn ai_mode(&self) -> u32 {

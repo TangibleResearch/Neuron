@@ -1,4 +1,5 @@
 use neuron::NeuronCpu;
+use neuron::assembler::assemble;
 use neuron::cpu::{FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO};
 
 fn run(program: &[u8]) -> NeuronCpu {
@@ -6,7 +7,9 @@ fn run(program: &[u8]) -> NeuronCpu {
     memory[..program.len()].copy_from_slice(program);
 
     let mut cpu = NeuronCpu::new(memory.len() as u32);
-    cpu.run(&mut memory);
+    while !cpu.is_halted() {
+        cpu.step(&mut memory);
+    }
     cpu
 }
 
@@ -62,9 +65,67 @@ fn executes_mac_and_matrix_instructions_through_the_cpu() {
     cpu.write_matrix(0, input);
     cpu.write_matrix(1, identity);
 
-    cpu.run(&mut memory);
+    while !cpu.is_halted() {
+        cpu.step(&mut memory);
+    }
 
     assert_eq!(cpu.read_scalar(3), 20);
     assert_eq!(cpu.mac_accumulator(), 20);
     assert_eq!(cpu.read_matrix(2), input);
+}
+
+#[test]
+fn issuer_preserves_data_memory_stack_and_control_flow_behavior() {
+    let program = assemble(
+        r#"
+        MOVI R1, 240
+        MOVI R2, 15
+        AND R3, R1, R2
+        OR R4, R1, R2
+        XOR R5, R1, R2
+        NOT R6, R2
+        MOVI R7, 4
+        SHL R8, R2, R7
+        SHR R9, R1, R7
+        MOV R10, R9
+        MOVI R11, 512
+        STORE R11, R4
+        LOAD R12, R11
+        PUSH R12
+        POP R13
+        CMP R1, R8
+        JNZ failure
+        JZ equal
+    failure:
+        MOVI R14, 99
+    equal:
+        CALL function
+        JMP done
+    function:
+        MOVI R14, 42
+        RET
+    done:
+        HALT
+        "#,
+    )
+    .unwrap();
+    let mut memory = vec![0; 1024];
+    memory[..program.len()].copy_from_slice(&program);
+    let mut cpu = NeuronCpu::new(memory.len() as u32);
+
+    while !cpu.is_halted() {
+        cpu.step(&mut memory);
+    }
+
+    assert_eq!(cpu.read_scalar(3), 0);
+    assert_eq!(cpu.read_scalar(4), 255);
+    assert_eq!(cpu.read_scalar(5), 255);
+    assert_eq!(cpu.read_scalar(6), !15);
+    assert_eq!(cpu.read_scalar(8), 240);
+    assert_eq!(cpu.read_scalar(9), 15);
+    assert_eq!(cpu.read_scalar(10), 15);
+    assert_eq!(cpu.read_scalar(12), 255);
+    assert_eq!(cpu.read_scalar(13), 255);
+    assert_eq!(cpu.read_scalar(14), 42);
+    assert_eq!(&memory[512..516], &255_u32.to_le_bytes());
 }

@@ -1,8 +1,13 @@
 pub mod accelerator;
+pub mod assembler;
 pub mod cpu;
+pub mod debug;
+pub mod drivers;
+pub mod isa;
+pub mod issuer;
 pub mod mac;
 pub mod matrix;
 pub mod scalar_alu;
-
 pub use cpu::NeuronCpu;
+pub use debug::trace::TraceEvent;
 pub use matrix::Matrix;

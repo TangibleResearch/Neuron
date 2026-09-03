@@ -58,13 +58,6 @@ Development is progressing through research and experimentation in:
 9. Display and device architecture
 10. Architecture simulation and benchmarking
 
-## Project Philosophy
-
-Neuron is not intended to simply reproduce an existing processor architecture with additional AI instructions.
-
-The long-term goal is to investigate a processor architecture in which the ISA, compiler, memory system, execution engines, and AI accelerator are designed together.
-
-Architectural decisions are expected to evolve through implementation, simulation, published computer-architecture research, experimentation, and feedback from researchers.
 
 ## Status
 
@@ -85,8 +78,3 @@ cargo build --release --locked
 
 GitHub Actions runs these checks for every push and pull request. After a successful push to `main`, it publishes `index.html` and `Neuron.png` to GitHub Pages. In the repository's **Settings → Pages**, select **GitHub Actions** as the publishing source once before the first deployment.
 
-## Tangible Research
-
-Tangible Neuron is part of **Tangible Research**, an independent research effort focused on building and exploring new computing and artificial intelligence systems.
-
-**Make AI Tangible.**

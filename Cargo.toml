@@ -6,3 +6,5 @@ edition = "2024"
 name = "neuron"
 path = "src/Neuron.rs"
 [dependencies]
+device_query = "4.0.0" # or the latest version
+dotenvy = "0.15.7"
