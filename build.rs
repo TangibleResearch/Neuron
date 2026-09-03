@@ -6,25 +6,44 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn main() {
     // 1. Calculate current date natively
     let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
     let secs = since_the_epoch.as_secs();
     let days_since_epoch = secs / 86400;
-    
+
     let mut year = 1970;
     let mut days_left = days_since_epoch;
     loop {
         let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
         let days_in_year = if is_leap { 366 } else { 365 };
-        if days_left < days_in_year { break; }
+        if days_left < days_in_year {
+            break;
+        }
         days_left -= days_in_year;
         year += 1;
     }
-    
+
     let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let month_days = vec![31, if is_leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let month_days = vec![
+        31,
+        if is_leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 1;
     for days in month_days.iter() {
-        if days_left < *days { break; }
+        if days_left < *days {
+            break;
+        }
         days_left -= *days;
         month += 1;
     }

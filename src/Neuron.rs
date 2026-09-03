@@ -1,8 +1,8 @@
+use dotenvy::dotenv;
+use neuron::{NeuronCpu, debug::etb::ETB, drivers::keyboard::check_keyboard_present};
 use std::env;
 use std::fs;
 use std::process::ExitCode;
-use dotenvy::dotenv;
-use neuron::{NeuronCpu, debug::etb::ETB, drivers::keyboard::check_keyboard_present};
 
 const MEMORY_SIZE: usize = 1024;
 
