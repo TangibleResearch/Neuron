@@ -1,5 +1,5 @@
 use dotenvy::dotenv;
-use neuron::{NeuronCpu, debug::etb::ETB, drivers::keyboard::check_keyboard_present};
+use neuron::{NeuronCpu, debug::etb::ETB};
 use std::env;
 use std::fs;
 use std::process::ExitCode;
@@ -43,11 +43,6 @@ fn run() -> Result<(), String> {
 
     println!("--- Neuron32 Boot ---");
     dotenv().ok();
-    if check_keyboard_present() {
-        println!("Keyboard detected. Ready for input.");
-    } else {
-        println!("No keyboard detected. Proceeding without keyboard input.");
-    }
     println!("© Copyright 2026 Tangible Research Inc. All rights reserved.");
     println!("Checking System Specifications...");
     match env::var("VERSION") {
