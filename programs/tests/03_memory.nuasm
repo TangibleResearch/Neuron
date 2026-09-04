@@ -1,0 +1,40 @@
+// Memory round-trip.
+//
+// memory[512] = 123456
+// load it back
+// compare result
+
+MOVI R1, 512
+MOVI R2, 123456
+
+STORE R1, R2
+LOAD R3, R1
+
+CMP R2, R3
+JNZ fail
+
+pass:
+MOVI R1, 80
+OUT R1
+MOVI R1, 65
+OUT R1
+MOVI R1, 83
+OUT R1
+MOVI R1, 83
+OUT R1
+MOVI R1, 10
+OUT R1
+HALT
+
+fail:
+MOVI R1, 70
+OUT R1
+MOVI R1, 65
+OUT R1
+MOVI R1, 73
+OUT R1
+MOVI R1, 76
+OUT R1
+MOVI R1, 10
+OUT R1
+HALT

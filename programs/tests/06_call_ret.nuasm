@@ -1,0 +1,43 @@
+// Function call test.
+//
+// R1 = 5
+// function adds 10
+// expected = 15
+
+MOVI R1, 5
+CALL add_ten
+
+MOVI R2, 15
+CMP R1, R2
+JNZ fail
+
+pass:
+MOVI R3, 80
+OUT R3
+MOVI R3, 65
+OUT R3
+MOVI R3, 83
+OUT R3
+MOVI R3, 83
+OUT R3
+MOVI R3, 10
+OUT R3
+HALT
+
+add_ten:
+MOVI R2, 10
+ADD R1, R1, R2
+RET
+
+fail:
+MOVI R3, 70
+OUT R3
+MOVI R3, 65
+OUT R3
+MOVI R3, 73
+OUT R3
+MOVI R3, 76
+OUT R3
+MOVI R3, 10
+OUT R3
+HALT

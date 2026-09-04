@@ -1,0 +1,43 @@
+// Count from 0 → 100.
+//
+// If branching or arithmetic breaks,
+// final R1 won't equal 100.
+
+MOVI R1, 0
+MOVI R2, 1
+MOVI R3, 100
+
+loop:
+ADD R1, R1, R2
+
+CMP R1, R3
+JNZ loop
+
+CMP R1, R3
+JNZ fail
+
+pass:
+MOVI R4, 80
+OUT R4
+MOVI R4, 65
+OUT R4
+MOVI R4, 83
+OUT R4
+MOVI R4, 83
+OUT R4
+MOVI R4, 10
+OUT R4
+HALT
+
+fail:
+MOVI R4, 70
+OUT R4
+MOVI R4, 65
+OUT R4
+MOVI R4, 73
+OUT R4
+MOVI R4, 76
+OUT R4
+MOVI R4, 10
+OUT R4
+HALT

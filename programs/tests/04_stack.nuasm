@@ -1,0 +1,51 @@
+// Stack LIFO test.
+//
+// Push 111
+// Push 222
+//
+// POP must return:
+// 222
+// 111
+
+MOVI R1, 111
+MOVI R2, 222
+
+PUSH R1
+PUSH R2
+
+POP R3
+POP R4
+
+MOVI R5, 222
+CMP R3, R5
+JNZ fail
+
+MOVI R5, 111
+CMP R4, R5
+JNZ fail
+
+pass:
+MOVI R1, 80
+OUT R1
+MOVI R1, 65
+OUT R1
+MOVI R1, 83
+OUT R1
+MOVI R1, 83
+OUT R1
+MOVI R1, 10
+OUT R1
+HALT
+
+fail:
+MOVI R1, 70
+OUT R1
+MOVI R1, 65
+OUT R1
+MOVI R1, 73
+OUT R1
+MOVI R1, 76
+OUT R1
+MOVI R1, 10
+OUT R1
+HALT
