@@ -122,6 +122,11 @@ impl Issuer {
             OP_MACREAD => IssueResult::Value(self.mac.accumulator() as u32),
 
             OP_MMUL => panic!("MMUL requires matrix operands"),
+            OP_RELU => {
+                let value = arguments[0] as i32;
+                let result = if value < 0 { 0 } else { value };
+                IssueResult::Value(result as u32)
+            }
             OP_HALT => IssueResult::Halt,
 
             _ => panic!("Issuer received unsupported opcode: {operation:#04X}"),

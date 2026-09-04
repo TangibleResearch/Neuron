@@ -783,6 +783,16 @@ impl NeuronCpu {
 
                 self.write_matrix(destination, result);
             }
+            OP_RELU => {
+                let register = self.fetch_u8(memory);
+
+                let value = self.read_scalar(register);
+                let result = self.issue(OP_RELU, &[value]).value();
+
+                self.write_scalar(register, result);
+
+                self.update_zero_negative(result);
+            }
 
             // ====================================================
             // 0xFF - HALT

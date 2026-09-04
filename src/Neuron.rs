@@ -1,4 +1,5 @@
 use dotenvy::dotenv;
+use neuron::debug::ic::{INSTRUCTION_LOG, Instruction};
 use neuron::{NeuronCpu, debug::etb::ETB};
 use std::env;
 use std::fs;
@@ -67,6 +68,7 @@ fn run() -> Result<(), String> {
     }
     while !cpu.is_halted() {
         if let Some(event) = cpu.step(&mut memory) {
+            Instruction::log(event.opcode);
             etb.record(event);
         }
     }
@@ -83,6 +85,40 @@ fn run() -> Result<(), String> {
     for register in 1..=5 {
         println!("R{register} = {}", cpu.read_scalar(register));
     }
+    let stats = INSTRUCTION_LOG.lock().unwrap();
+
+    println!("--- Instruction Statistics ---");
+    println!("Total: {}", stats.total);
+    println!("MOVI: {}", stats.movi);
+    println!("MOV: {}", stats.mov);
+    println!("ADD: {}", stats.add);
+    println!("SUB: {}", stats.sub);
+    println!("MUL: {}", stats.mul);
+    println!("DIV: {}", stats.div);
+    println!("MOD: {}", stats.mod_);
+    println!("AND: {}", stats.and);
+    println!("OR: {}", stats.or);
+    println!("XOR: {}", stats.xor);
+    println!("NOT: {}", stats.not);
+    println!("SHL: {}", stats.shl);
+    println!("SHR: {}", stats.shr);
+    println!("LOAD: {}", stats.load);
+    println!("STORE: {}", stats.store);
+    println!("PUSH: {}", stats.push);
+    println!("POP: {}", stats.pop);
+    println!("CMP: {}", stats.cmp);
+    println!("JMP: {}", stats.jmp);
+    println!("JZ: {}", stats.jz);
+    println!("JNZ: {}", stats.jnz);
+    println!("CALL: {}", stats.call);
+    println!("RET: {}", stats.ret);
+    println!("MAC: {}", stats.mac);
+    println!("MACCLR: {}", stats.macclr);
+    println!("MACREAD: {}", stats.macread);
+    println!("MMUL: {}", stats.mmul);
+    println!("OUT: {}", stats.out);
+    println!("RELU: {}", stats.relu);
+    println!("HALT: {}", stats.halt);
 
     Ok(())
 }
