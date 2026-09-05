@@ -27,6 +27,7 @@ pub static INSTRUCTION_LOG: Mutex<Instruction> = Mutex::new(Instruction {
     macclr: 0,
     macread: 0,
     mmul: 0,
+    mset: 0,
     out: 0,
     halt: 0,
     movi: 0,
@@ -60,6 +61,7 @@ pub struct Instruction {
     pub macclr: u64,
     pub macread: u64,
     pub mmul: u64,
+    pub mset: u64,
     pub out: u64,
     pub halt: u64,
     pub movi: u64,
@@ -109,6 +111,7 @@ impl Instruction {
             OP_MACREAD => log.macread += 1,
 
             OP_MMUL => log.mmul += 1,
+            OP_MSET => log.mset += 1,
 
             OP_OUT => log.out += 1,
             OP_RELU => log.relu += 1,

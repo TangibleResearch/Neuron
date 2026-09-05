@@ -1,8 +1,9 @@
+use crate::accelerator::{AcceleratorInstruction, AiAccelerator};
 use crate::debug::trace::TraceEvent;
 use crate::isa::*;
 use crate::issuer::IssueResult;
 use crate::issuer::Issuer;
-use crate::matrix::Matrix;
+use crate::matrix::{MATRIX_SIZE, Matrix};
 
 pub const FLAG_ZERO: u32 = 1 << 0;
 pub const FLAG_NEGATIVE: u32 = 1 << 1;
@@ -12,6 +13,11 @@ pub const FLAG_OVERFLOW: u32 = 1 << 3;
 #[derive(Default)]
 pub struct NeuronCpu {
     issuer: Issuer,
+
+    // =========================
+    // AI Accelerator
+    // =========================
+    accelerator: AiAccelerator,
 
     // =========================
     // Scalar General Registers
@@ -86,6 +92,41 @@ impl NeuronCpu {
             sp: memory_size,
             ..Default::default()
         }
+    }
+
+    /// Creates a CPU with a caller-provided accelerator configuration.
+    pub fn with_accelerator(memory_size: u32, accelerator: AiAccelerator) -> Self {
+        Self {
+            sp: memory_size,
+            accelerator,
+            ..Default::default()
+        }
+    }
+
+    /// Returns the AI accelerator integrated into this CPU.
+    pub const fn accelerator(&self) -> &AiAccelerator {
+        &self.accelerator
+    }
+
+    /// Returns mutable access to the integrated AI accelerator.
+    pub const fn accelerator_mut(&mut self) -> &mut AiAccelerator {
+        &mut self.accelerator
+    }
+
+    /// Queues work on the CPU's AI accelerator.
+    pub fn queue_accelerator_instruction(&mut self, instruction: AcceleratorInstruction) {
+        self.accelerator.add_instruction(instruction);
+    }
+
+    /// Executes the next queued instruction on the CPU's AI accelerator.
+    pub fn process_accelerator_instruction(&mut self) -> Result<(), String> {
+        self.accelerator.process_instruction().map(|_| ())
+    }
+
+    fn execute_accelerator_instruction(&mut self, instruction: AcceleratorInstruction) -> f32 {
+        self.accelerator
+            .execute_instruction(instruction)
+            .unwrap_or_else(|error| panic!("Neuron AI accelerator execution failed: {error}"))
     }
 
     // ============================================================
@@ -760,7 +801,37 @@ impl NeuronCpu {
             }
 
             // ====================================================
-            // 0x90 - MMUL (4x4 INT8 matrix multiply, INT32 output)
+            // 0x92 - MSET
+            //
+            // Encoding:
+            // 92 <matrix> <row> <column> <signed INT8 immediate>
+            // ====================================================
+            OP_MSET => {
+                let register = self.fetch_u8(memory);
+                let row = self.fetch_u8(memory) as usize;
+                let column = self.fetch_u8(memory) as usize;
+                let value = self.fetch_u8(memory) as i8;
+
+                if register > 3 {
+                    panic!("MSET: invalid matrix register M{register}");
+                }
+                if row >= MATRIX_SIZE {
+                    panic!("MSET: matrix row {row} is outside 0..={}", MATRIX_SIZE - 1);
+                }
+                if column >= MATRIX_SIZE {
+                    panic!(
+                        "MSET: matrix column {column} is outside 0..={}",
+                        MATRIX_SIZE - 1
+                    );
+                }
+
+                let mut matrix = self.read_matrix(register);
+                matrix[row][column] = i32::from(value);
+                self.write_matrix(register, matrix);
+            }
+
+            // ====================================================
+            // 0x90 - MMUL
             //
             // Encoding:
             // 90 <destination matrix> <source A matrix> <source B matrix>
@@ -769,25 +840,101 @@ impl NeuronCpu {
             // MMUL M2, M0, M1
             //
             // Operation:
-            // M2 = M0 x M1
+            // M2 = M0 × M1
+            //
+            // 4x4 INT8 inputs
+            // INT32 accumulated output
             // ====================================================
             OP_MMUL => {
                 let destination = self.fetch_u8(memory);
                 let source_a = self.fetch_u8(memory);
                 let source_b = self.fetch_u8(memory);
 
+                // Read source matrix registers.
                 let a = self.read_matrix(source_a);
                 let b = self.read_matrix(source_b);
 
-                let result = self.issuer.issue_matrix(OP_MMUL, a, b).matrix();
+                let mut result: Matrix = [[0; MATRIX_SIZE]; MATRIX_SIZE];
 
+                // C[row][column] =
+                //     A[row][0] * B[0][column]
+                //   + A[row][1] * B[1][column]
+                //   + ...
+                //
+                // For a 4x4 matrix this produces:
+                //
+                // 16 output elements
+                // × 4 products each
+                // = 64 accelerator multiply operations.
+                for row in 0..MATRIX_SIZE {
+                    for column in 0..MATRIX_SIZE {
+                        let mut accumulator: i32 = 0;
+
+                        for k in 0..MATRIX_SIZE {
+                            // Neuron matrix multiplication currently uses
+                            // signed INT8 inputs.
+                            let a_value = i8::try_from(a[row][k]).unwrap_or_else(|_| {
+                                panic!(
+                                    "MMUL: M{}[{}][{}] value {} does not fit in INT8",
+                                    source_a, row, k, a[row][k]
+                                )
+                            });
+
+                            let b_value = i8::try_from(b[k][column]).unwrap_or_else(|_| {
+                                panic!(
+                                    "MMUL: M{}[{}][{}] value {} does not fit in INT8",
+                                    source_b, k, column, b[k][column]
+                                )
+                            });
+
+                            // Send the actual multiplication to the
+                            // MatrixMultiply processing element.
+                            let product = self.execute_accelerator_instruction(
+                                AcceleratorInstruction::MatrixMultiply {
+                                    a: f32::from(a_value),
+                                    b: f32::from(b_value),
+                                    output_slot: 0,
+                                },
+                            );
+
+                            // INT8 × INT8 is exactly representable as f32,
+                            // so converting this product back to i32 is safe
+                            // for the current accelerator implementation.
+                            accumulator = accumulator.wrapping_add(product as i32);
+                        }
+
+                        result[row][column] = accumulator;
+                    }
+                }
+
+                // Write the complete 4x4 result back to the destination
+                // matrix register.
                 self.write_matrix(destination, result);
+
+                // MMUL zero flag:
+                // set ZERO only when every output element is zero.
+                let result_is_zero = result.iter().flatten().all(|&value| value == 0);
+
+                self.set_flag(FLAG_ZERO, result_is_zero);
+
+                // A matrix doesn't have one meaningful scalar sign,
+                // carry, or overflow result.
+                self.set_flag(FLAG_NEGATIVE, false);
+                self.set_flag(FLAG_CARRY, false);
+                self.set_flag(FLAG_OVERFLOW, false);
             }
             OP_RELU => {
                 let register = self.fetch_u8(memory);
 
                 let value = self.read_scalar(register);
-                let result = self.issue(OP_RELU, &[value]).value();
+                let signed_value = value as i32;
+                self.execute_accelerator_instruction(AcceleratorInstruction::ReLU {
+                    input: signed_value as f32,
+                    output_slot: 0,
+                });
+                // Preserve the exact INT32 ISA value even when its f32 representation
+                // on the accelerator output bus is rounded.
+                let result = if signed_value < 0 { 0 } else { value };
 
                 self.write_scalar(register, result);
 

@@ -1,21 +1,22 @@
 use crate::cpu::FLAG_ZERO;
 use crate::isa::*;
 use crate::mac::Mac;
-use crate::matrix::{Matrix, MatrixEngine};
 use crate::scalar_alu::{AluResult, ScalarAlu};
 
-/// Dispatches decoded operations to Neuron execution units.
+/// Dispatches decoded non-AI operations to Neuron execution units.
+///
+/// AI/DNN instructions such as MMUL and RELU are handled directly
+/// by the CPU's AI accelerator path and must not execute here.
 #[derive(Default)]
 pub struct Issuer {
     scalar_alu: ScalarAlu,
     mac: Mac,
-    matrix_engine: MatrixEngine,
 }
 
+/// Result returned by the issuer after executing an instruction.
 pub enum IssueResult {
     Scalar(AluResult),
     Value(u32),
-    Matrix(Matrix),
     Branch(u32),
     Output(char),
     Halt,
@@ -45,13 +46,6 @@ impl IssueResult {
         }
     }
 
-    pub(crate) fn matrix(self) -> Matrix {
-        match self {
-            Self::Matrix(matrix) => matrix,
-            _ => panic!("issuer did not return a matrix result"),
-        }
-    }
-
     pub(crate) fn output(self) -> char {
         match self {
             Self::Output(character) => character,
@@ -73,85 +67,311 @@ impl IssueResult {
 }
 
 impl Issuer {
+    /// Issues one decoded non-AI instruction.
+    ///
+    /// `arguments` contains values already resolved by the CPU.
+    ///
+    /// MMUL and RELU deliberately panic here because they must be routed
+    /// through the CPU's AI accelerator instead.
     pub fn issue(&mut self, operation: u8, arguments: &[u32], flags: u32) -> IssueResult {
         match operation {
-            OP_MOVI | OP_MOV | OP_LOAD | OP_POP => IssueResult::Value(arguments[0]),
-
-            OP_OUT => IssueResult::Output((arguments[0] & 0xFF) as u8 as char),
-
-            OP_ADD => IssueResult::Scalar(self.scalar_alu.add(arguments[0], arguments[1])),
-            OP_SUB => IssueResult::Scalar(self.scalar_alu.sub(arguments[0], arguments[1])),
-            OP_MUL => IssueResult::Scalar(self.scalar_alu.mul(arguments[0], arguments[1])),
-            OP_DIV => IssueResult::Scalar(self.scalar_alu.div(arguments[0], arguments[1])),
-            OP_MOD => IssueResult::Scalar(self.scalar_alu.modulo(arguments[0], arguments[1])),
-
-            OP_AND => IssueResult::Value(arguments[0] & arguments[1]),
-            OP_OR => IssueResult::Value(arguments[0] | arguments[1]),
-            OP_XOR => IssueResult::Value(arguments[0] ^ arguments[1]),
-            OP_NOT => IssueResult::Value(!arguments[0]),
-            OP_SHL => IssueResult::Value(arguments[0].wrapping_shl(arguments[1] & 31)),
-            OP_SHR => IssueResult::Value(arguments[0].wrapping_shr(arguments[1] & 31)),
-            OP_CMP => IssueResult::Value(arguments[0].wrapping_sub(arguments[1])),
+            //
+            // Data movement
+            //
+            OP_MOVI | OP_MOV | OP_LOAD | OP_POP => {
+                IssueResult::Value(Self::arg(arguments, 0, operation))
+            }
 
             OP_STORE | OP_PUSH => IssueResult::None,
 
-            OP_JMP | OP_CALL | OP_RET => IssueResult::Branch(arguments[0]),
-            OP_JZ => {
-                if (flags & FLAG_ZERO) != 0 {
-                    IssueResult::Branch(arguments[0])
-                } else {
-                    IssueResult::None
-                }
+            //
+            // Output
+            //
+            OP_OUT => {
+                let value = Self::arg(arguments, 0, operation);
+
+                IssueResult::Output((value & 0xFF) as u8 as char)
             }
-            OP_JNZ => {
-                if (flags & FLAG_ZERO) == 0 {
-                    IssueResult::Branch(arguments[0])
+
+            //
+            // Scalar ALU
+            //
+            OP_ADD => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Scalar(self.scalar_alu.add(a, b))
+            }
+
+            OP_SUB => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Scalar(self.scalar_alu.sub(a, b))
+            }
+
+            OP_MUL => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Scalar(self.scalar_alu.mul(a, b))
+            }
+
+            OP_DIV => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Scalar(self.scalar_alu.div(a, b))
+            }
+
+            OP_MOD => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Scalar(self.scalar_alu.modulo(a, b))
+            }
+
+            //
+            // Bitwise operations
+            //
+            OP_AND => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Value(a & b)
+            }
+
+            OP_OR => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Value(a | b)
+            }
+
+            OP_XOR => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Value(a ^ b)
+            }
+
+            OP_NOT => {
+                let value = Self::arg(arguments, 0, operation);
+
+                IssueResult::Value(!value)
+            }
+
+            OP_SHL => {
+                let value = Self::arg(arguments, 0, operation);
+                let shift = Self::arg(arguments, 1, operation);
+
+                IssueResult::Value(value.wrapping_shl(shift & 31))
+            }
+
+            OP_SHR => {
+                let value = Self::arg(arguments, 0, operation);
+                let shift = Self::arg(arguments, 1, operation);
+
+                IssueResult::Value(value.wrapping_shr(shift & 31))
+            }
+
+            //
+            // Comparison
+            //
+            OP_CMP => {
+                let a = Self::arg(arguments, 0, operation);
+                let b = Self::arg(arguments, 1, operation);
+
+                IssueResult::Value(a.wrapping_sub(b))
+            }
+
+            //
+            // Branching
+            //
+            OP_JMP | OP_CALL | OP_RET => {
+                let address = Self::arg(arguments, 0, operation);
+
+                IssueResult::Branch(address)
+            }
+
+            OP_JZ => {
+                let address = Self::arg(arguments, 0, operation);
+
+                if (flags & FLAG_ZERO) != 0 {
+                    IssueResult::Branch(address)
                 } else {
                     IssueResult::None
                 }
             }
 
+            OP_JNZ => {
+                let address = Self::arg(arguments, 0, operation);
+
+                if (flags & FLAG_ZERO) == 0 {
+                    IssueResult::Branch(address)
+                } else {
+                    IssueResult::None
+                }
+            }
+
+            //
+            // Standalone MAC coprocessor
+            //
             OP_MAC => {
-                self.mac.step(arguments[0] as i8, arguments[1] as i8);
+                let a = Self::arg(arguments, 0, operation) as i8;
+                let b = Self::arg(arguments, 1, operation) as i8;
+
+                self.mac.step(a, b);
+
                 IssueResult::None
             }
+
             OP_MACCLR => {
                 self.mac.reset();
+
                 IssueResult::None
             }
+
             OP_MACREAD => IssueResult::Value(self.mac.accumulator() as u32),
 
-            OP_MMUL => panic!("MMUL requires matrix operands"),
-            OP_RELU => {
-                let value = arguments[0] as i32;
-                let result = if value < 0 { 0 } else { value };
-                IssueResult::Value(result as u32)
+            //
+            // AI / DNN accelerator operations
+            //
+            OP_MMUL | OP_RELU => {
+                panic!("AI opcode {operation:#04X} must be dispatched to the CPU accelerator")
             }
+
+            //
+            // Processor control
+            //
             OP_HALT => IssueResult::Halt,
 
-            _ => panic!("Issuer received unsupported opcode: {operation:#04X}"),
+            //
+            // Unknown opcode
+            //
+            _ => {
+                panic!("Issuer received unsupported opcode: {operation:#04X}")
+            }
         }
     }
 
-    pub fn issue_matrix(&mut self, operation: u8, a: Matrix, b: Matrix) -> IssueResult {
-        if operation != OP_MMUL {
-            panic!("Issuer received non-matrix opcode: {operation:#04X}");
-        }
-
-        self.matrix_engine.load_tiles(a, b);
-        self.matrix_engine.start();
-        while self.matrix_engine.is_busy() {
-            self.matrix_engine.step_cycle();
-        }
-
-        IssueResult::Matrix(
-            self.matrix_engine
-                .read_output()
-                .expect("MMUL finished without an output"),
-        )
+    /// Returns one argument or panics with a useful message.
+    ///
+    /// This is better than scattering arguments[0], arguments[1], etc.
+    /// everywhere because malformed decoded instructions now produce
+    /// an understandable error instead of a generic slice panic.
+    fn arg(arguments: &[u32], index: usize, operation: u8) -> u32 {
+        arguments.get(index).copied().unwrap_or_else(|| {
+            panic!(
+                "Opcode {operation:#04X} expected argument {index}, \
+                 but only {} argument(s) were supplied",
+                arguments.len()
+            )
+        })
     }
 
+    /// Current value of the standalone MAC accumulator.
     pub const fn mac_accumulator(&self) -> i32 {
         self.mac.accumulator()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cpu::FLAG_ZERO;
+
+    #[test]
+    fn add_is_dispatched_to_scalar_alu() {
+        let mut issuer = Issuer::default();
+
+        let result = issuer.issue(OP_ADD, &[5, 7], 0).scalar();
+
+        assert_eq!(result.value, 12);
+        assert!(!result.zero);
+    }
+
+    #[test]
+    fn movi_returns_value() {
+        let mut issuer = Issuer::default();
+
+        let result = issuer.issue(OP_MOVI, &[123], 0).value();
+
+        assert_eq!(result, 123);
+    }
+
+    #[test]
+    fn jz_branches_when_zero_flag_is_set() {
+        let mut issuer = Issuer::default();
+
+        let result = issuer.issue(OP_JZ, &[0x1234], FLAG_ZERO);
+
+        assert_eq!(result.branch(), Some(0x1234));
+    }
+
+    #[test]
+    fn jz_does_not_branch_without_zero_flag() {
+        let mut issuer = Issuer::default();
+
+        let result = issuer.issue(OP_JZ, &[0x1234], 0);
+
+        assert_eq!(result.branch(), None);
+    }
+
+    #[test]
+    fn jnz_branches_when_zero_flag_is_clear() {
+        let mut issuer = Issuer::default();
+
+        let result = issuer.issue(OP_JNZ, &[0x5678], 0);
+
+        assert_eq!(result.branch(), Some(0x5678));
+    }
+
+    #[test]
+    fn mac_accumulates() {
+        let mut issuer = Issuer::default();
+
+        issuer.issue(OP_MACCLR, &[], 0).expect_none();
+
+        issuer.issue(OP_MAC, &[2, 5], 0).expect_none();
+
+        issuer.issue(OP_MAC, &[3, 4], 0).expect_none();
+
+        assert_eq!(issuer.mac_accumulator(), 22);
+
+        assert_eq!(issuer.issue(OP_MACREAD, &[], 0).value(), 22);
+    }
+
+    #[test]
+    fn output_returns_low_byte_as_character() {
+        let mut issuer = Issuer::default();
+
+        let output = issuer.issue(OP_OUT, &['A' as u32], 0).output();
+
+        assert_eq!(output, 'A');
+    }
+
+    #[test]
+    #[should_panic(expected = "must be dispatched to the CPU accelerator")]
+    fn mmul_cannot_be_sent_to_normal_issuer() {
+        let mut issuer = Issuer::default();
+
+        issuer.issue(OP_MMUL, &[], 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be dispatched to the CPU accelerator")]
+    fn relu_cannot_be_sent_to_normal_issuer() {
+        let mut issuer = Issuer::default();
+
+        issuer.issue(OP_RELU, &[5], 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "expected argument 1")]
+    fn malformed_instruction_reports_missing_argument() {
+        let mut issuer = Issuer::default();
+
+        issuer.issue(OP_ADD, &[5], 0);
     }
 }

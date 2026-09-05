@@ -116,6 +116,7 @@ fn run() -> Result<(), String> {
     println!("MACCLR: {}", stats.macclr);
     println!("MACREAD: {}", stats.macread);
     println!("MMUL: {}", stats.mmul);
+    println!("MSET: {}", stats.mset);
     println!("OUT: {}", stats.out);
     println!("RELU: {}", stats.relu);
     println!("HALT: {}", stats.halt);

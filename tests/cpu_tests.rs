@@ -1,6 +1,6 @@
-use neuron::NeuronCpu;
 use neuron::assembler::assemble;
 use neuron::cpu::{FLAG_CARRY, FLAG_NEGATIVE, FLAG_OVERFLOW, FLAG_ZERO};
+use neuron::{AcceleratorInstruction, AiAccelerator, HardwareUnit, NeuronCpu};
 
 fn run(program: &[u8]) -> NeuronCpu {
     let mut memory = vec![0; 1024];
@@ -72,6 +72,81 @@ fn executes_mac_and_matrix_instructions_through_the_cpu() {
     assert_eq!(cpu.read_scalar(3), 20);
     assert_eq!(cpu.mac_accumulator(), 20);
     assert_eq!(cpu.read_matrix(2), input);
+    assert_eq!(cpu.accelerator().completed_instruction_count(), 64);
+}
+
+#[test]
+fn assembly_initializes_matrices_before_mmul() {
+    let program = assemble(
+        r#"
+        MSET M0, 0, 0, 1
+        MSET M0, 0, 1, 2
+        MSET M0, 0, 2, 3
+        MSET M0, 0, 3, 4
+        MSET M0, 1, 0, 5
+        MSET M0, 1, 1, 6
+        MSET M0, 1, 2, 7
+        MSET M0, 1, 3, 8
+        MSET M0, 2, 0, 9
+        MSET M0, 2, 1, 10
+        MSET M0, 2, 2, 11
+        MSET M0, 2, 3, 12
+        MSET M0, 3, 0, 13
+        MSET M0, 3, 1, 14
+        MSET M0, 3, 2, 15
+        MSET M0, 3, 3, 16
+
+        MSET M1, 0, 0, 1
+        MSET M1, 1, 1, 1
+        MSET M1, 2, 2, 1
+        MSET M1, 3, 3, 1
+
+        MMUL M2, M0, M1
+        HALT
+        "#,
+    )
+    .unwrap();
+
+    let cpu = run(&program);
+    let expected = [
+        [1, 2, 3, 4],
+        [5, 6, 7, 8],
+        [9, 10, 11, 12],
+        [13, 14, 15, 16],
+    ];
+
+    assert_eq!(cpu.read_matrix(0), expected);
+    assert_eq!(cpu.read_matrix(2), expected);
+}
+
+#[test]
+fn mset_preserves_signed_int8_values() {
+    let program = assemble("MSET M3, 0, 0, -128\nMSET M3, 3, 3, 127\nHALT").unwrap();
+
+    let cpu = run(&program);
+
+    assert_eq!(cpu.read_matrix(3)[0][0], -128);
+    assert_eq!(cpu.read_matrix(3)[3][3], 127);
+}
+
+#[test]
+fn cpu_dispatches_relu_to_the_ai_accelerator() {
+    let program = assemble(
+        r#"
+        MOVI R1, 0xFFFFFFFF
+        RELU R1
+        MOVI R2, 2147483647
+        RELU R2
+        HALT
+        "#,
+    )
+    .unwrap();
+
+    let cpu = run(&program);
+
+    assert_eq!(cpu.read_scalar(1), 0);
+    assert_eq!(cpu.read_scalar(2), 2_147_483_647);
+    assert_eq!(cpu.accelerator().completed_instruction_count(), 2);
 }
 
 #[test]
@@ -128,4 +203,34 @@ fn issuer_preserves_data_memory_stack_and_control_flow_behavior() {
     assert_eq!(cpu.read_scalar(13), 255);
     assert_eq!(cpu.read_scalar(14), 42);
     assert_eq!(&memory[512..516], &255_u32.to_le_bytes());
+}
+
+#[test]
+fn cpu_owns_and_executes_ai_accelerator_work() {
+    let mut cpu = NeuronCpu::new(1024);
+
+    assert!(
+        cpu.accelerator()
+            .processing_grid
+            .iter()
+            .any(|pe| pe.unit_type == HardwareUnit::ReLUActivation)
+    );
+
+    cpu.queue_accelerator_instruction(AcceleratorInstruction::ReLU {
+        input: -2.0,
+        output_slot: 0,
+    });
+    cpu.process_accelerator_instruction().unwrap();
+
+    assert_eq!(cpu.accelerator().output_bus[0], Some(0.0));
+}
+
+#[test]
+fn cpu_accepts_a_custom_ai_accelerator() {
+    let accelerator = AiAccelerator::new(6, 16);
+    let cpu = NeuronCpu::with_accelerator(1024, accelerator);
+
+    assert_eq!(cpu.stack_pointer(), 1024);
+    assert_eq!(cpu.accelerator().processing_grid.len(), 6);
+    assert_eq!(cpu.accelerator().output_bus.len(), 16);
 }

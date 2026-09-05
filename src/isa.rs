@@ -26,6 +26,7 @@ pub const OP_MACCLR: u8 = 0x83;
 pub const OP_MACREAD: u8 = 0x84;
 pub const OP_MMUL: u8 = 0x90;
 pub const OP_RELU: u8 = 0x91;
+pub const OP_MSET: u8 = 0x92;
 pub const OP_OUT: u8 = 0xA0;
 pub const OP_HALT: u8 = 0xFF;
 
@@ -59,6 +60,7 @@ pub const fn opcode_name(opcode: u8) -> &'static str {
         OP_RELU => "RELU",
         OP_MACREAD => "MACREAD",
         OP_MMUL => "MMUL",
+        OP_MSET => "MSET",
         OP_OUT => "OUT",
         OP_HALT => "HALT",
         _ => "UNKNOWN",

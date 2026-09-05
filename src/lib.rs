@@ -8,6 +8,7 @@ pub mod issuer;
 pub mod mac;
 pub mod matrix;
 pub mod scalar_alu;
+pub use accelerator::{AcceleratorInstruction, AiAccelerator, HardwareUnit, ProcessingElement};
 pub use cpu::NeuronCpu;
 pub use debug::trace::TraceEvent;
 pub use matrix::Matrix;

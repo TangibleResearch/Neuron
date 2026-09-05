@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt;
 
 use crate::isa::*;
+use crate::matrix::MATRIX_SIZE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssembleError {
@@ -36,6 +37,7 @@ enum OperandLayout {
     ScalarImmediate,
     Address,
     ThreeMatrices,
+    MatrixCellImmediate,
 }
 
 impl OperandLayout {
@@ -45,6 +47,7 @@ impl OperandLayout {
             Self::Scalar | Self::Address => 1,
             Self::TwoScalars | Self::ScalarImmediate => 2,
             Self::ThreeScalars | Self::ThreeMatrices => 3,
+            Self::MatrixCellImmediate => 4,
         }
     }
 
@@ -56,6 +59,7 @@ impl OperandLayout {
             Self::ThreeScalars | Self::ThreeMatrices => 4,
             Self::ScalarImmediate => 6,
             Self::Address => 5,
+            Self::MatrixCellImmediate => 5,
         }
     }
 }
@@ -140,6 +144,16 @@ pub fn assemble(source: &str) -> Result<Vec<u8>, AssembleError> {
                     output.push(parse_matrix(operand, line_number)?);
                 }
             }
+            OperandLayout::MatrixCellImmediate => {
+                output.push(parse_matrix(&operands[0], line_number)?);
+                output.push(parse_matrix_coordinate(&operands[1], "row", line_number)?);
+                output.push(parse_matrix_coordinate(
+                    &operands[2],
+                    "column",
+                    line_number,
+                )?);
+                output.push(parse_i8(&operands[3], line_number)? as u8);
+            }
         }
     }
 
@@ -195,6 +209,48 @@ fn parse_scalar(register: &str, line_number: usize) -> Result<u8, AssembleError>
 
 fn parse_matrix(register: &str, line_number: usize) -> Result<u8, AssembleError> {
     parse_register(register, 'M', 3, "matrix register", line_number)
+}
+
+fn parse_matrix_coordinate(
+    coordinate: &str,
+    axis: &str,
+    line_number: usize,
+) -> Result<u8, AssembleError> {
+    let coordinate = parse_u32(coordinate, line_number)?;
+    if coordinate >= MATRIX_SIZE as u32 {
+        return Err(AssembleError::new(
+            line_number,
+            format!(
+                "matrix {axis} {coordinate} is outside 0..={}",
+                MATRIX_SIZE - 1
+            ),
+        ));
+    }
+    Ok(coordinate as u8)
+}
+
+fn parse_i8(value: &str, line_number: usize) -> Result<i8, AssembleError> {
+    let parsed = if let Some(hex) = value
+        .strip_prefix("-0x")
+        .or_else(|| value.strip_prefix("-0X"))
+    {
+        i32::from_str_radix(hex, 16).map(|magnitude| -magnitude)
+    } else if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        i32::from_str_radix(hex, 16)
+    } else {
+        value.parse::<i32>()
+    }
+    .map_err(|_| AssembleError::new(line_number, format!("invalid INT8 value {value}")))?;
+
+    i8::try_from(parsed).map_err(|_| {
+        AssembleError::new(
+            line_number,
+            format!("MSET value {value} does not fit in INT8"),
+        )
+    })
 }
 
 fn parse_register(
@@ -266,6 +322,7 @@ fn instruction(mnemonic: &str) -> Option<Instruction> {
         "MACCLR" => (OP_MACCLR, OperandLayout::None),
         "MACREAD" => (OP_MACREAD, OperandLayout::Scalar),
         "MMUL" => (OP_MMUL, OperandLayout::ThreeMatrices),
+        "MSET" => (OP_MSET, OperandLayout::MatrixCellImmediate),
         "RELU" => (OP_RELU, OperandLayout::Scalar),
         "OUT" => (OP_OUT, OperandLayout::Scalar),
         "HALT" => (OP_HALT, OperandLayout::None),
@@ -322,6 +379,7 @@ mod tests {
             ("MACCLR", vec![OP_MACCLR]),
             ("MACREAD R3", vec![OP_MACREAD, 3]),
             ("MMUL M2, M0, M1", vec![OP_MMUL, 2, 0, 1]),
+            ("MSET M0, 2, 3, -128", vec![OP_MSET, 0, 2, 3, 128]),
             ("OUT R1", vec![OP_OUT, 1]),
             ("HALT", vec![OP_HALT]),
         ];
@@ -346,6 +404,30 @@ mod tests {
 
         let operands = assemble("MOVI R1").unwrap_err();
         assert_eq!(operands.to_string(), "line 1: MOVI expects 2 operands");
+    }
+
+    #[test]
+    fn validates_mset_operands() {
+        assert_eq!(
+            assemble("MSET M4, 0, 0, 1").unwrap_err().to_string(),
+            "line 1: invalid matrix register M4"
+        );
+        assert_eq!(
+            assemble("MSET M0, 4, 0, 1").unwrap_err().to_string(),
+            "line 1: matrix row 4 is outside 0..=3"
+        );
+        assert_eq!(
+            assemble("MSET M0, 0, 4, 1").unwrap_err().to_string(),
+            "line 1: matrix column 4 is outside 0..=3"
+        );
+        assert_eq!(
+            assemble("MSET M0, 0, 0, 128").unwrap_err().to_string(),
+            "line 1: MSET value 128 does not fit in INT8"
+        );
+        assert_eq!(
+            assemble("MSET M0, 0, 0, -129").unwrap_err().to_string(),
+            "line 1: MSET value -129 does not fit in INT8"
+        );
     }
 
     #[test]
