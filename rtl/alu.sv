@@ -24,12 +24,14 @@ module alu (
         ALU_SHR = 4'hA;
 
     logic [32:0] extended;
+    logic [63:0] product;
 
     always_comb begin
         result   = 32'b0;
         carry    = 1'b0;
         overflow = 1'b0;
         extended = 33'b0;
+        product  = 64'b0;
 
         case (op)
 
@@ -53,7 +55,16 @@ module alu (
             end
 
             ALU_MUL: begin
-                result = a * b;
+                // Mirrors Rust's `a.overflowing_mul(b)` on u32: the low 32
+                // bits are the (wrapping) result, and overflow is set
+                // whenever the full 64-bit product doesn't fit in 32 bits.
+                // NOTE: the previous version of this ALU always reported
+                // carry/overflow = 0 for MUL, a real correctness gap
+                // versus the reference model — fixed here.
+                product  = {32'b0, a} * {32'b0, b};
+                result   = product[31:0];
+                overflow = |product[63:32];
+                carry    = overflow;
             end
 
             ALU_DIV: begin

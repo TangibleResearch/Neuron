@@ -1,0 +1,9 @@
+*.vvp
+tb/build/
+sim/build/
+sim/testvectors/
+renode/build/
+obj_dir/
+*.dylib
+*.o
+.DS_Store

@@ -1,0 +1,51 @@
+:name: Neuron32
+:description: Runs a NuASM binary on the co-simulated Neuron32 core.
+
+$name?="Neuron32"
+
+using sysbus
+
+# Force Renode's built-in CoSimulationPlugin assembly to load before we
+# dynamically compile CoSimulatedNeuron32.cs below. It is NOT loaded at
+# Renode startup (confirmed via `python "System.AppDomain.CurrentDomain
+# .GetAssemblies()"` — CoSimulationPlugin is absent until something
+# actually references a `CoSimulated.*` type); the ad-hoc compiler used by
+# `include @*.cs` only sees currently-loaded assemblies
+# (AdHocCompiler.cs -> AssemblyHelper.GetAssembliesLocations() ->
+# AppDomain.CurrentDomain.GetAssemblies()), so without this step compiling
+# CoSimulatedNeuron32.cs fails with "type or namespace CoSimulatedCPU could
+# not be found" even though the class and its base are both real and
+# public.
+#
+# This warmup peripheral is created on its OWN throwaway machine and
+# removed (`mach rem`) before the real machine exists — NOT added to
+# $name. `start` below starts every machine in the emulation, and this
+# peripheral is never given a SimulationFilePath, so if it were left in
+# the real machine its own connection-setup timer would fire on `start`
+# and crash with a null-pointer Marshal error (this is exactly what
+# happened during development: don't "simplify" this back to a single
+# machine without re-testing a real `start`).
+mach create "neuron_plugin_warmup"
+machine LoadPlatformDescriptionFromString "warmup: CoSimulated.CoSimulatedUART @ sysbus <0x70000000, +0x100>"
+mach rem "neuron_plugin_warmup"
+
+include @renode/CoSimulatedNeuron32.cs
+
+mach create $name
+using sysbus
+machine LoadPlatformDescription @renode/platforms/neuron.repl
+
+$cpuMacOS?=@renode/build/libVtop.dylib
+$cpuLinux?=@renode/build/libVtop.so
+$program?=@sim/testvectors/hello.bin
+
+cpu SimulationFilePathMacOS $cpuMacOS
+cpu SimulationFilePathLinux $cpuLinux
+
+sysbus LoadBinary $program 0x0
+
+# No `cpu PC 0x0` here on purpose — see renode/README.md and the note at
+# the top of CoSimulatedNeuron32.cs. The RTL's own reset already sets
+# PC=0, which is all this needs.
+
+start

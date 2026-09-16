@@ -12,7 +12,11 @@ module register_file (
     input  logic        write_enable,
 
     output logic [31:0] read_data_a,
-    output logic [31:0] read_data_b
+    output logic [31:0] read_data_b,
+
+    // Simulation/debug-only full-array readback (used by neuron_core's
+    // debug port and testbenches); a real synthesis flow would drop this.
+    output logic [31:0] regs_dbg [0:15]
 );
 
     logic [31:0] registers [0:15];
@@ -20,6 +24,7 @@ module register_file (
 
     assign read_data_a = registers[read_addr_a];
     assign read_data_b = registers[read_addr_b];
+    assign regs_dbg     = registers;
 
     always_ff @(posedge clk) begin
         if (reset) begin

@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rtl:
+    name: RTL and NuASM tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEMU_DIR: ${{ github.workspace }}/Nemu
+
+    steps:
+      - name: Check out Neuron
+        uses: actions/checkout@v4
+
+      - name: Check out Nemu
+        uses: actions/checkout@v4
+        with:
+          repository: TangibleResearch/Nemu
+          path: Nemu
+          # Keep CI deterministic; see Claude's pinning note in CHATGPT.md.
+          ref: 7e62582523b4059d20b657e1f7c270d95f1dd4bc
+
+      - name: Install Verilator
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes verilator xxd
+
+      - name: Build NuASM
+        run: cargo build --release --bin nuasm --manifest-path "$NEMU_DIR/Cargo.toml"
+
+      - name: Generate NuASM test vectors
+        run: sim/gen_testvectors.sh
+
+      - name: Run instruction-level RTL tests
+        run: tb/run_all.sh
+
+      - name: Run module testbenches
+        run: |
+          verilator --binary --top-module alu_tb -Wno-fatal --timing \
+            -Mdir tb/build/alu -o alu_tb_v \
+            rtl/alu.sv tb/alu_tb.sv
+          tb/build/alu/alu_tb_v
+
+          verilator --binary --top-module register_tb -Wno-fatal --timing \
+            -Mdir tb/build/register -o register_tb_v \
+            rtl/register.sv tb/register_tb.sv
+          tb/build/register/register_tb_v
+
+          verilator --binary --top-module clock_tb -Wno-fatal --timing \
+            -Mdir tb/build/clock -o clock_tb_v \
+            rtl/clock.sv tb/clock_tb.sv
+          tb/build/clock/clock_tb_v

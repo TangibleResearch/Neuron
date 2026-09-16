@@ -1,0 +1,5 @@
+ram: Memory.ArrayMemory @ sysbus 0x0
+    size: 0x100000
+
+cpu: CoSimulated.CoSimulatedNeuron32 @ sysbus
+    cpuType: "neuron"
