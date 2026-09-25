@@ -78,7 +78,11 @@ module reset_tb;
         $display("PASS  %s: clean reset state", what);
     endtask
 
-    task automatic load_program(input logic [7:0] prog [], input int len);
+    // Fixed-size (not dynamic `prog []`) so older Verilator (5.020, what
+    // ubuntu-24.04 CI installs) can pass the fixed-size arrays below.
+    localparam int PROG_MAX = 32;
+
+    task automatic load_program(input logic [7:0] prog [PROG_MAX], input int len);
         for (i = 0; i < MEM_SIZE; i = i + 1) mem.bytes[i] = 8'h00;
         for (i = 0; i < len; i = i + 1) mem.bytes[i] = prog[i];
     endtask
@@ -86,13 +90,18 @@ module reset_tb;
     task automatic do_reset(input int settle_cycles);
         reset = 1'b1;
         repeat (2) @(posedge clk);
+        // Release on the falling edge: dropping reset in the same timestep
+        // as the posedge the DUT samples it on is a scheduling race (and
+        // resolves differently across Verilator versions), especially
+        // when the caller loads a new program right after this returns.
+        @(negedge clk);
         reset = 1'b0;
         repeat (settle_cycles) @(posedge clk);
     endtask
 
     // MOVI R1,5 ; MOVI R2,7 ; ADD R3,R1,R2 ; MOVI R4,3 ; HALT
     // (6 + 6 + 4 + 6 + 1 = 23 bytes)
-    function automatic void prog_alu(ref logic [7:0] p [24]);
+    function automatic void prog_alu(ref logic [7:0] p [PROG_MAX]);
         p = '{default: 8'h00};
         p[0]=OP_MOVI; p[1]=8'd1; p[2]=8'd5; p[3]=8'd0; p[4]=8'd0; p[5]=8'd0;
         p[6]=OP_MOVI; p[7]=8'd2; p[8]=8'd7; p[9]=8'd0; p[10]=8'd0; p[11]=8'd0;
@@ -103,7 +112,7 @@ module reset_tb;
 
     // MOVI R1,100 ; STORE [R1]=R1 (store R1 to address in R1... simpler:
     // MOVI R2,64 ; STORE [R2],R1 ; LOAD R3,[R2] ; HALT
-    function automatic void prog_mem(ref logic [7:0] p [30]);
+    function automatic void prog_mem(ref logic [7:0] p [PROG_MAX]);
         p = '{default: 8'h00};
         p[0]=OP_MOVI; p[1]=8'd1; p[2]=8'd42; p[3]=8'd0; p[4]=8'd0; p[5]=8'd0;
         p[6]=OP_MOVI; p[7]=8'd2; p[8]=8'd64; p[9]=8'd0; p[10]=8'd0; p[11]=8'd0;
@@ -113,7 +122,7 @@ module reset_tb;
     endfunction
 
     // MSET M0[0][0]=5 ; MSET M1[0][0]=5 ; MMUL M2,M0,M1 ; HALT
-    function automatic void prog_mmul(ref logic [7:0] p [20]);
+    function automatic void prog_mmul(ref logic [7:0] p [PROG_MAX]);
         p = '{default: 8'h00};
         p[0]=OP_MSET; p[1]=8'd0; p[2]=8'd0; p[3]=8'd0; p[4]=8'd5;
         p[5]=OP_MSET; p[6]=8'd1; p[7]=8'd0; p[8]=8'd0; p[9]=8'd5;
@@ -122,9 +131,9 @@ module reset_tb;
     endfunction
 
     initial begin
-        logic [7:0] p_alu [24];
-        logic [7:0] p_mem [30];
-        logic [7:0] p_mmul [20];
+        logic [7:0] p_alu [PROG_MAX];
+        logic [7:0] p_mem [PROG_MAX];
+        logic [7:0] p_mmul [PROG_MAX];
 
         prog_alu(p_alu);
         prog_mem(p_mem);
@@ -143,7 +152,7 @@ module reset_tb;
         // before any instruction has completed).
         // -------------------------------------------------------------
         load_program(p_alu, 23);
-        reset = 1'b1; repeat (2) @(posedge clk); reset = 1'b0;
+        do_reset(0);
         repeat (1) @(posedge clk); // now mid S_FETCH_OPCODE for the first byte
         do_reset(0);
         check_clean_reset_state("reset while fetching");
@@ -153,11 +162,13 @@ module reset_tb;
         // R1,5 and MOVI R2,7 complete, then reset partway through ADD).
         // -------------------------------------------------------------
         load_program(p_alu, 23);
-        reset = 1'b1; repeat (2) @(posedge clk); reset = 1'b0;
-        // Run long enough to be inside the ADD instruction's S_EXECUTE
-        // cycle (2 MOVIs x 6 bytes each = 12 fetch cycles, then a few
-        // more into ADD's own fetch/execute) but well before HALT.
-        repeat (14) @(posedge clk);
+        do_reset(0);
+        // Run until the ADD instruction is in flight (both MOVIs done,
+        // ADD's opcode latched) but well before HALT. Waiting on the
+        // condition rather than a fixed cycle count keeps this robust to
+        // fetch-timing changes.
+        i = 0;
+        while (!halted && dut.opcode_reg !== OP_ADD && i < 200) begin @(posedge clk); i = i + 1; end
         if (halted || dut.opcode_reg !== OP_ADD) begin
             $display("FAIL  reset while executing ALU: not mid-ADD at reset point (halted=%b opcode_reg=%0h) -- test needs re-tuning",
                       halted, dut.opcode_reg);
@@ -172,8 +183,10 @@ module reset_tb;
         // -------------------------------------------------------------
         wait_states = 8'd4;
         load_program(p_mem, 19);
-        reset = 1'b1; repeat (2) @(posedge clk); reset = 1'b0;
-        repeat (13) @(posedge clk); // past both MOVIs, into the STORE's memory wait
+        do_reset(0);
+        // Run past both MOVIs, into the STORE's memory wait.
+        i = 0;
+        while (!halted && !(mem_write === 1'b1 && mem_ready === 1'b0) && i < 200) begin @(posedge clk); i = i + 1; end
         if (mem_write !== 1'b1 || mem_ready !== 1'b0) begin
             $display("FAIL  reset during memory wait: not actually mid-wait at reset point (mem_write=%b mem_ready=%b) -- test needs re-tuning",
                       mem_write, mem_ready);
@@ -187,18 +200,25 @@ module reset_tb;
         // 5. Reset during MMUL (mid-systolic-run).
         // -------------------------------------------------------------
         load_program(p_mmul, 15);
-        reset = 1'b1; repeat (2) @(posedge clk); reset = 1'b0;
-        repeat (12) @(posedge clk); // past both MSETs, into the MMUL run
+        do_reset(0);
+        // Run past both MSETs, into the MMUL run.
+        i = 0;
+        while (!halted && dut.u_matrix_engine.busy !== 1'b1 && i < 200) begin @(posedge clk); i = i + 1; end
         if (dut.u_matrix_engine.busy !== 1'b1) begin
             $display("FAIL  reset during MMUL: matrix engine not busy at reset point -- test needs re-tuning");
             errors++;
         end
+        // Swap in the follow-up program now (MMUL's bytes are all fetched
+        // already), before the reset moves PC back to 0: some Verilator
+        // versions (5.020) don't re-evaluate memory_sync's combinational
+        // rdata on a testbench write to `bytes`, so loading after reset,
+        // with PC already sitting at 0, would fetch a stale opcode.
+        load_program(p_alu, 23);
         do_reset(0);
         check_clean_reset_state("reset during MMUL");
 
         // Core must still work correctly after this reset (not just be
         // architecturally zeroed, but actually able to execute again).
-        load_program(p_alu, 23);
         i = 0;
         while (!halted && i < 1000) begin @(posedge clk); i = i + 1; end
         if (!halted || regs_dbg[3] !== 32'd12 || regs_dbg[4] !== 32'd3) begin

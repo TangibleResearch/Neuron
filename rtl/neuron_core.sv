@@ -277,7 +277,7 @@ module neuron_core #(
 
         mem_addr    = pc;
         mem_word    = 1'b0;
-        mem_read    = 1'b1;
+        mem_read    = 1'b0;
         mem_write   = 1'b0;
         mem_wdata   = 32'd0;
 

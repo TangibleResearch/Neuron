@@ -43,7 +43,11 @@ scripts/synth_check.sh
 
 Requires Yosys on `PATH` (`brew install yosys` on macOS, `apt-get install
 yosys` on Debian/Ubuntu -- also available in GitHub Actions' Ubuntu
-runners via apt, see `.github/workflows/ci.yml`). Writes a log and the
+runners via apt, see `.github/workflows/ci.yml`) and
+[sv2v](https://github.com/zachjs/sv2v) (download a release binary; set
+`SV2V=/path/to/sv2v` if it isn't on `PATH`). Yosys's built-in frontend
+can't parse this design's unpacked-array ports, so `synth_check.sh` first
+converts the RTL to plain Verilog with sv2v and synthesizes that. Writes a log and the
 synthesized netlist/statistics to `build/reports/` (gitignored; see
 `docs/FABRICATION_READINESS.md` for how to read the results).
 

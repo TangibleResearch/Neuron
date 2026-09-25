@@ -34,11 +34,12 @@ REGS = list(range(1, 16))  # R1-R15 (R0 left alone, matching the project's
                             # existing hand-written test programs' style)
 MATRIX_REGS = [0, 1, 2, 3]  # M0-M3
 
-# Small, fixed, word-aligned scratch region for LOAD/STORE: comfortably
-# clear of where a short generated program's own code lives (starts at
-# address 0) and of the stack (grows down from MEM_SIZE=1024, and this
-# generator caps stack depth well below reaching address 700).
-MEM_ADDRS = list(range(600, 700, 4))
+# Small, fixed, word-aligned scratch region for LOAD/STORE: clear of the
+# program's own code (starts at address 0; a 60-instruction program with
+# MSET-heavy matrix seeding can exceed 600 bytes, so this must sit well
+# above that) and of the stack (grows down from MEM_SIZE=1024; this
+# generator caps stack depth at 8 words, so it never goes below 992).
+MEM_ADDRS = list(range(900, 992, 4))
 
 
 def emit(lines, text):
@@ -182,8 +183,11 @@ def main():
             row, col = rng.randint(0, 3), rng.randint(0, 3)
             val = rng.randint(-128, 127)
             emit(lines, f"MSET M{m}, {row}, {col}, {val}")
-            mset_matrix_regs.add(m)
-            mmul_result_regs.discard(m)
+            # A single-cell MSET doesn't make an MMUL-result matrix
+            # INT8-safe: its other 15 cells still hold wide MMUL results.
+            # Only the full 16-cell rewrite in the "mmul" arm clears that.
+            if m not in mmul_result_regs:
+                mset_matrix_regs.add(m)
 
         elif op == "mmul":
             src_candidates = [m for m in MATRIX_REGS if m in mset_matrix_regs and m not in mmul_result_regs]
@@ -206,6 +210,7 @@ def main():
         elif op == "relu":
             d = rand_reg()
             emit(lines, f"RELU R{d}")
+            touch(d)  # a negative (known-nonzero) value becomes 0
 
         elif op == "out":
             r = rand_reg()

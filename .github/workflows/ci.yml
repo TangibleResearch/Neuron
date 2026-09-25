@@ -84,6 +84,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes yosys
 
+      # Yosys's built-in SV frontend can't parse unpacked-array ports;
+      # scripts/synth_check.sh converts the RTL with sv2v first.
+      - name: Install sv2v
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/sv2v.zip" https://github.com/zachjs/sv2v/releases/download/v0.0.13/sv2v-Linux.zip
+          unzip -q "$RUNNER_TEMP/sv2v.zip" -d "$RUNNER_TEMP/sv2v"
+          echo "$RUNNER_TEMP/sv2v/sv2v-Linux" >> "$GITHUB_PATH"
+
       - name: Run synthesis check
         run: scripts/synth_check.sh
 

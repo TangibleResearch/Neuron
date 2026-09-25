@@ -20,23 +20,15 @@
 # sets the working directory (repo root) and creates build/reports/ this
 # script writes into.
 #
-# `-DSYNTHESIS` matches the `` `ifndef SYNTHESIS `` guards in
-# rtl/memory.sv/rtl/memory_sync.sv around their simulation-only
-# load_bytes/$readmemh task (neuron_chip doesn't instantiate either
-# module, so this mostly future-proofs the flag for anyone who points
-# this script at a config that does).
+# Input is not the raw rtl/*.sv files: Yosys's built-in SystemVerilog
+# frontend can't parse unpacked-array ports (register_file's regs_dbg,
+# the matrix engine/regfile's 4x4 tile ports), so scripts/synth_check.sh
+# first runs the RTL through sv2v (https://github.com/zachjs/sv2v) with
+# -DSYNTHESIS and --top=neuron_chip, and this script reads that single
+# converted Verilog file. `-DSYNTHESIS` matches the `` `ifndef SYNTHESIS ``
+# guards around simulation-only code (assertions, $readmemh loaders).
 
-read_verilog -sv -DSYNTHESIS rtl/isa_pkg.sv
-read_verilog -sv -DSYNTHESIS rtl/register.sv
-read_verilog -sv -DSYNTHESIS rtl/alu.sv
-read_verilog -sv -DSYNTHESIS rtl/clock.sv
-read_verilog -sv -DSYNTHESIS rtl/status_reg.sv
-read_verilog -sv -DSYNTHESIS rtl/mac.sv
-read_verilog -sv -DSYNTHESIS rtl/matrix_regfile.sv
-read_verilog -sv -DSYNTHESIS rtl/matrix_engine.sv
-read_verilog -sv -DSYNTHESIS rtl/decode.sv
-read_verilog -sv -DSYNTHESIS rtl/neuron_core.sv
-read_verilog -sv -DSYNTHESIS rtl/neuron_chip.sv
+read_verilog build/reports/neuron_chip.sv2v.v
 
 # Elaborate with neuron_chip as top; -check fails the run on an undriven
 # or multiply-driven port at the hierarchy level, and on unresolved

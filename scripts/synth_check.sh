@@ -7,7 +7,10 @@
 # `check` passes catch which problem) or if it never produced the
 # expected output netlist.
 #
-# Requires Yosys (https://github.com/YosysHQ/yosys) on PATH. This is a
+# Requires Yosys (https://github.com/YosysHQ/yosys) and sv2v
+# (https://github.com/zachjs/sv2v) on PATH -- sv2v converts the
+# SystemVerilog RTL into plain Verilog Yosys's built-in frontend can
+# parse (see synth/synth.ys). Set SV2V to override its path. This is a
 # synthesizability + generic-logic area-estimate check, not a tapeout
 # flow -- see asic/README.md for what's still missing between this and a
 # real chip (a target standard-cell library/PDK, SRAM macro integration,
@@ -25,12 +28,35 @@ if ! command -v yosys >/dev/null 2>&1; then
     exit 1
 fi
 
+SV2V="${SV2V:-sv2v}"
+if ! command -v "$SV2V" >/dev/null 2>&1; then
+    echo "error: sv2v not found (looked for '$SV2V')." >&2
+    echo "Download a release binary from https://github.com/zachjs/sv2v/releases" >&2
+    echo "and put it on PATH (or set SV2V=/path/to/sv2v). See synth/README.md." >&2
+    exit 1
+fi
+
 mkdir -p "$REPORT_DIR"
 
 echo "yosys version: $(yosys -V)" | tee "$REPORT_DIR/synth_tool_version.txt"
 
 cd "$ROOT_DIR"
 LOG="$REPORT_DIR/synth.log"
+
+# Same file list and order synth/synth.ys used to read directly.
+"$SV2V" -DSYNTHESIS --top=neuron_chip \
+    rtl/isa_pkg.sv \
+    rtl/register.sv \
+    rtl/alu.sv \
+    rtl/clock.sv \
+    rtl/status_reg.sv \
+    rtl/mac.sv \
+    rtl/matrix_regfile.sv \
+    rtl/matrix_engine.sv \
+    rtl/decode.sv \
+    rtl/neuron_core.sv \
+    rtl/neuron_chip.sv \
+    > "$REPORT_DIR/neuron_chip.sv2v.v"
 
 if yosys -l "$LOG" synth/synth.ys; then
     :

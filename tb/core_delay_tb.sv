@@ -125,7 +125,14 @@ module core_delay_tb;
         while (!halted && cycles < TIMEOUT_CYCLES) begin
             @(posedge clk);
             if (out_valid) begin
-                captured = {captured, $sformatf("%c", out_data)};
+                // Escape non-printable bytes: under this simulator, a raw NUL
+                // in a string silently swallows this and every later $display
+                // line (including the final-state line scripts/diff_test.sh
+                // parses).
+                if (out_data >= 8'h20 && out_data < 8'h7f)
+                    captured = {captured, $sformatf("%c", out_data)};
+                else
+                    captured = {captured, $sformatf("\\x%02h", out_data)};
             end
             cycles = cycles + 1;
         end

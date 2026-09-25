@@ -68,10 +68,14 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # hex with no leading zeros) don't cause false mismatches.
 extract_state() {
     local out="$1"
-    local pc sp status
-    pc="$(echo "$out" | grep -oE 'PC=[0-9]+' | head -1 | cut -d= -f2)"
-    sp="$(echo "$out" | grep -oE 'SP=[0-9]+' | head -1 | cut -d= -f2)"
-    status="$(echo "$out" | grep -oE 'STATUS=(0x)?[0-9A-Fa-f]+' | head -1 | cut -d= -f2)"
+    local pc sp status final
+    # Anchor on the final-state "PC=<n> SP=<n> STATUS=<x>" line: Nemu also
+    # prints a per-instruction debugger trace ("PC=0x... opcode=...
+    # STATUS=...") earlier in its output, which must not be mistaken for it.
+    final="$(echo "$out" | grep -E 'PC=[0-9]+ SP=[0-9]+ STATUS=' | tail -1)"
+    pc="$(echo "$final" | grep -oE 'PC=[0-9]+' | head -1 | cut -d= -f2)"
+    sp="$(echo "$final" | grep -oE 'SP=[0-9]+' | head -1 | cut -d= -f2)"
+    status="$(echo "$final" | grep -oE 'STATUS=(0x)?[0-9A-Fa-f]+' | head -1 | cut -d= -f2)"
     status=$((16#${status#0x}))
     echo "PC=$pc SP=$sp STATUS=$status"
     for r in 1 2 3 4 5; do

@@ -69,7 +69,9 @@ check_output() {
 for hex in "$VECTORS_DIR"/*.hex; do
     name="$(basename "${hex%.hex}")"
     for waitmode in 0 1 2 3; do
-        out="$("$BIN" +HEXFILE="$hex" +WAITMODE="$waitmode" +SEED="$SEED")"
+        # A simulator abort (e.g. a failed assertion) must be reported as a
+        # FAIL with its message, not silently kill the script via set -e.
+        out="$("$BIN" +HEXFILE="$hex" +WAITMODE="$waitmode" +SEED="$SEED" 2>&1)" || true
         check_output "$name" "$out" "$waitmode"
     done
 done
