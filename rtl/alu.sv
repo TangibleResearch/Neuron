@@ -1,3 +1,11 @@
+`timescale 1ns/1ps
+import isa_pkg::*;
+
+// Combinational 32-bit scalar ALU. Op selector values (ALU_ADD, ALU_SUB,
+// ...) come from isa_pkg, the single source of truth shared with
+// neuron_core.sv -- do not redeclare local copies here (a prior version of
+// this file did, which meant these opcode values could silently drift out
+// of sync with isa_pkg if either copy were ever edited alone).
 module alu (
     input  logic [31:0] a,
     input  logic [31:0] b,
@@ -9,19 +17,6 @@ module alu (
     output logic        carry,
     output logic        overflow
 );
-
-    localparam logic [3:0]
-        ALU_ADD = 4'h0,
-        ALU_SUB = 4'h1,
-        ALU_MUL = 4'h2,
-        ALU_DIV = 4'h3,
-        ALU_MOD = 4'h4,
-        ALU_AND = 4'h5,
-        ALU_OR  = 4'h6,
-        ALU_XOR = 4'h7,
-        ALU_NOT = 4'h8,
-        ALU_SHL = 4'h9,
-        ALU_SHR = 4'hA;
 
     logic [32:0] extended;
     logic [63:0] product;

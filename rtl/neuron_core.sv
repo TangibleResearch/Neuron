@@ -59,7 +59,7 @@ module neuron_core #(
         S_HALTED
     } state_e;
 
-    state_e state, state_n;
+    state_e state;
 
     logic [31:0] pc, sp, fp;
     logic [7:0]  opcode_reg;
@@ -93,7 +93,17 @@ module neuron_core #(
 
     logic [3:0]  alu_op;
     logic [31:0] alu_a, alu_b, alu_result;
-    logic        alu_zero, alu_negative, alu_carry, alu_overflow;
+    // alu_zero/alu_negative are part of alu.sv's general combinational
+    // interface (it always exposes all four flags, matching
+    // carry/overflow, so it stays a self-contained reusable ALU) but this
+    // top level doesn't consume them: status_reg recomputes Z/N itself
+    // from `value` under every flag_mode (not just ALU results, e.g.
+    // FLAG_MODE_CMP/FLAG_MODE_MMUL have no ALU result at all), so wiring
+    // the ALU's own zero/negative in here would be redundant, not a bug.
+    /* verilator lint_off UNUSEDSIGNAL */
+    logic        alu_zero, alu_negative;
+    /* verilator lint_on UNUSEDSIGNAL */
+    logic        alu_carry, alu_overflow;
 
     alu u_alu (
         .a(alu_a), .b(alu_b), .op(alu_op),
@@ -656,5 +666,41 @@ module neuron_core #(
             endcase
         end
     end
+
+    // -----------------------------------------------------------------
+    // Assertions: a small, deliberately short list of the invariants
+    // that actually matter for a correct fabricated chip, not blanket
+    // coverage. Checked by Verilator when built with --assert (see
+    // tb/run_all.sh, tb/run_delay_tests.sh, sim/build.sh); silently
+    // parsed-but-inert without that flag.
+    // -----------------------------------------------------------------
+`ifndef SYNTHESIS
+    // The core must never present a memory request that is both a read
+    // and a write in the same cycle -- every opcode arm above sets
+    // exactly one of mem_read/mem_write (or neither), never both.
+    assert property (@(posedge clk) disable iff (reset) !(mem_read && mem_write));
+
+    // Bus contract (docs/MEMORY_INTERFACE.md): while a request is
+    // outstanding (issued, not yet acknowledged by mem_ready), the
+    // requester must hold the same request -- same operation, same
+    // address, same write data -- until it completes. neuron_core's
+    // mem_addr/mem_read/mem_write/mem_wdata are pure combinational
+    // functions of (state, opcode_reg, operand[], sp, pc), none of which
+    // change while waiting, so this should hold by construction; the
+    // assertion exists to catch a future change that breaks that.
+    assert property (@(posedge clk) disable iff (reset)
+        (mem_read && !mem_ready) |=> mem_read && $stable(mem_addr));
+    assert property (@(posedge clk) disable iff (reset)
+        (mem_write && !mem_ready) |=> mem_write && $stable(mem_addr) && $stable(mem_wdata));
+
+    // HALT is terminal until reset: once halted_r is set, only `reset`
+    // (which disables this property while active) may clear it.
+    assert property (@(posedge clk) disable iff (reset) $past(halted_r) |-> halted_r);
+
+    // The core must never ask the matrix engine to start a new MMUL run
+    // while it's still busy with the previous one (mmul_start is derived
+    // as `!mmul_busy && !mmul_done`, above; this guards that derivation).
+    assert property (@(posedge clk) disable iff (reset) mmul_start |-> !mmul_busy);
+`endif
 
 endmodule

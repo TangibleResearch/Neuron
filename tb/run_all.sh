@@ -25,7 +25,7 @@ BUILD_DIR="$ROOT_DIR/tb/build"
 
 mkdir -p "$BUILD_DIR"
 
-verilator --binary --top-module core_tb -Wno-fatal --timing \
+verilator --binary --top-module core_tb -Wno-fatal --timing --assert \
     -Mdir "$BUILD_DIR/vobj" -o core_tb_v \
     "$ROOT_DIR"/rtl/isa_pkg.sv \
     "$ROOT_DIR"/rtl/register.sv \

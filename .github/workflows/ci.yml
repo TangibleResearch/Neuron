@@ -10,9 +10,9 @@ permissions:
 
 jobs:
   rtl:
-    name: RTL and NuASM tests
+    name: RTL lint, tests, and differential verification
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       NEMU_DIR: ${{ github.workspace }}/Nemu
 
@@ -33,28 +33,64 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes verilator xxd
 
-      - name: Build NuASM
-        run: cargo build --release --bin nuasm --manifest-path "$NEMU_DIR/Cargo.toml"
+      - name: Build NuASM and the Nemu reference CLI
+        run: |
+          cargo build --release --bin nuasm --manifest-path "$NEMU_DIR/Cargo.toml"
+          cargo build --release --bin neuron --manifest-path "$NEMU_DIR/Cargo.toml"
+
+      - name: RTL lint (synthesizability audit)
+        run: scripts/lint.sh
 
       - name: Generate NuASM test vectors
         run: sim/gen_testvectors.sh
 
-      - name: Run instruction-level RTL tests
+      - name: Run instruction-level RTL tests (zero-latency memory)
         run: tb/run_all.sh
 
-      - name: Run module testbenches
+      - name: Run instruction-level RTL tests (delayed/synchronous memory)
+        run: tb/run_delay_tests.sh
+
+      - name: Run per-module testbenches (alu, register, clock, matrix/MAC hardening, reset hardening)
+        run: tb/run_module_tests.sh
+
+      - name: Differential verification against Nemu (hand-written programs)
         run: |
-          verilator --binary --top-module alu_tb -Wno-fatal --timing \
-            -Mdir tb/build/alu -o alu_tb_v \
-            rtl/alu.sv tb/alu_tb.sv
-          tb/build/alu/alu_tb_v
+          for prog in "$NEMU_DIR"/programs/tests/*.nuasm; do
+            scripts/diff_test.sh "$prog"
+          done
 
-          verilator --binary --top-module register_tb -Wno-fatal --timing \
-            -Mdir tb/build/register -o register_tb_v \
-            rtl/register.sv tb/register_tb.sv
-          tb/build/register/register_tb_v
+      - name: Differential verification against Nemu (randomized programs, deterministic seed)
+        run: scripts/diff_test.sh --random --seed 20260101 --count 40
 
-          verilator --binary --top-module clock_tb -Wno-fatal --timing \
-            -Mdir tb/build/clock -o clock_tb_v \
-            rtl/clock.sv tb/clock_tb.sv
-          tb/build/clock/clock_tb_v
+      - name: Upload failing differential-test programs (if any)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diff-test-failures
+          path: tb/build/diff_fail_seed_*.nuasm
+          if-no-files-found: ignore
+
+  synthesis:
+    name: Generic synthesis check (Yosys)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out Neuron
+        uses: actions/checkout@v4
+
+      - name: Install Yosys
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes yosys
+
+      - name: Run synthesis check
+        run: scripts/synth_check.sh
+
+      - name: Upload synthesis reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synth-reports
+          path: build/reports/
+          if-no-files-found: ignore

@@ -4,6 +4,7 @@ sim/build/
 sim/testvectors/
 renode/build/
 obj_dir/
+build/reports/
 *.dylib
 *.o
 .DS_Store

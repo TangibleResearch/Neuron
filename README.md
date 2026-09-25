@@ -4,13 +4,17 @@ Official Repo for the Tangible Neuron Project
 **NOTE**: This project is the Actual Verilog HDL based CPU, Not the Emulator. If you are willing to make code for Neuron, Use Nemu as this Repo is where the team will design the actual circut which then will be fabricated for production.
 
 Tangible Neuron is a Open source, ASIC based, AI based processor Designed to run Intense AI based workflows on **1** Chip
-
+## Why You should choose Neuron
+Neuron is a new AI processor and the goal is to give any person in the world of software and AI a premium access to a new research based AI model. A good reason to pick Neuron is espically you want to work on a Processor which is backed by active research while being able to use a new kind of processor for AI.
 ## Structure
 
 - `rtl/` — the Neuron32 scalar CPU core in SystemVerilog: register file, ALU, MAC unit, 4x4 INT8 matrix engine, and the fetch/decode/execute control unit (`neuron_core.sv`) that implements Nemu's instruction set (`src/isa.rs` / `src/cpu.rs` there is the spec).
 - `tb/` — unit testbenches per module, plus `core_tb.sv`, an instruction-level testbench that runs Nemu's real `.nuasm` test programs against the RTL. Run `tb/run_all.sh` (needs `sim/testvectors/`, see below).
 - `sim/` — standalone target: assemble and run a `.nuasm` file directly against the real RTL via Verilator. `sim/run.sh path/to/program.nuasm` (needs a local `Nemu` checkout for the assembler; set `NEMU_DIR` if it's not at `~/Nemu`). `sim/gen_testvectors.sh` regenerates the hex test vectors `tb/run_all.sh` uses.
 - `renode/` — wraps the same core as a CPU for [Renode](https://renode.io) via Verilator co-simulation, so Neuron can be the CPU in a simulated platform alongside Renode's peripheral models.
+- `docs/` — human-readable ISA/microarchitecture/memory-interface/reset/exception specs and `FABRICATION_READINESS.md`, the current pre-tapeout status.
+- `scripts/` — `lint.sh` (Verilator RTL lint), `synth_check.sh` (Yosys generic synthesis check), `diff_test.sh`/`gen_random_program.py` (differential testing against Nemu).
+- `synth/`, `constraints/`, `asic/` — generic synthesis flow, SDC timing constraints, and ASIC/physical-design flow scaffolding. See `docs/FABRICATION_READINESS.md` for what's actually been run.
 - `CHATGPT.md` — task backlog / spec handoff for AI coding agents working on this repo.
 
 **Build/test requirements**: [Verilator](https://verilator.org) (the reference simulator for this project — see the note in `tb/run_all.sh` about why Icarus Verilog isn't used), and a local clone of [Nemu](https://github.com/TangibleResearch/Nemu) for the NuASM assembler and reference test programs.

@@ -52,8 +52,15 @@ module memory #(
     end
 
     // Simulation-only program loader used by the sim/ top and testbenches.
+    // Guarded out of any synthesis run: $readmemh/string arguments have no
+    // hardware meaning, and a real chip loads program memory over the
+    // external bus (or from a boot ROM), never from a host filesystem
+    // path. Synthesis flows in this repo pass `-D SYNTHESIS` (see
+    // synth/synth.ys) specifically so this task is elaborated out.
+`ifndef SYNTHESIS
     task automatic load_bytes(input string path);
         $readmemh(path, bytes);
     endtask
+`endif
 
 endmodule

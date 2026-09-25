@@ -62,7 +62,7 @@ module matrix_engine (
             k    <= 2'd0;
         end
         else if (busy) begin
-            if (k == MATRIX_SIZE - 1) begin
+            if (k == 2'(MATRIX_SIZE - 1)) begin
                 busy <= 1'b0;
                 done <= 1'b1;
             end
@@ -72,5 +72,15 @@ module matrix_engine (
             done <= 1'b0;
         end
     end
+
+`ifndef SYNTHESIS
+    // busy and done are two phases of the same run and must never overlap.
+    assert property (@(posedge clk) disable iff (reset) !(busy && done));
+
+    // done is a single-cycle completion pulse; neuron_core's OP_MMUL arm
+    // samples it combinationally the one cycle it's high, so a stale
+    // (multi-cycle) done would make the core bulk-write the result twice.
+    assert property (@(posedge clk) disable iff (reset) done |=> !done);
+`endif
 
 endmodule

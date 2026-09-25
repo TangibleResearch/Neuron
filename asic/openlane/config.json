@@ -1,0 +1,36 @@
+{
+  "//": "PDK-agnostic OpenLane/OpenLane2 configuration skeleton for neuron_chip. NOT a validated run -- see asic/README.md for how to actually use this. Fields marked REPLACE_ME need a real value once a target PDK is chosen; everything else is either a real, already-correct value from this repo's RTL/constraints, or left to OpenLane's own default so it isn't duplicated (and potentially drifts out of sync) here.",
+
+  "DESIGN_NAME": "neuron_chip",
+
+  "VERILOG_FILES": [
+    "dir::../../rtl/isa_pkg.sv",
+    "dir::../../rtl/register.sv",
+    "dir::../../rtl/alu.sv",
+    "dir::../../rtl/clock.sv",
+    "dir::../../rtl/status_reg.sv",
+    "dir::../../rtl/mac.sv",
+    "dir::../../rtl/matrix_regfile.sv",
+    "dir::../../rtl/matrix_engine.sv",
+    "dir::../../rtl/decode.sv",
+    "dir::../../rtl/neuron_core.sv",
+    "dir::../../rtl/neuron_chip.sv"
+  ],
+
+  "//_CLOCK": "CLOCK_PERIOD mirrors constraints/neuron.sdc's placeholder (20ns / 50MHz). It is not a frequency claim -- see that file's header comment. REPLACE_ME with a value derived from real STA against the chosen PDK before treating this as anything but a bring-up starting point.",
+  "CLOCK_PORT": "clk",
+  "CLOCK_NET": "clk",
+  "CLOCK_PERIOD": 20.0,
+
+  "//_RESET": "reset is a synchronous input (docs/RESET.md); no special CTS/async-reset handling is configured here because none is architecturally required.",
+
+  "//_DIE_AREA": "REPLACE_ME: size from the actual cell count reported by synth/synth.ys's `stat` output against the CHOSEN PDK's real standard cells, not the generic-logic count synth/ reports today. No default die area is set here on purpose, rather than guessing a number that would silently be wrong for whatever PDK is eventually chosen.",
+
+  "//_PDK": "PDK, STD_CELL_LIBRARY, and PDK_ROOT are intentionally NOT set here -- they are supplied by whoever runs OpenLane, via environment/CLI (e.g. `PDK=sky130A`), never hardcoded into this repo. See asic/README.md, 'What this repo deliberately does NOT have'.",
+
+  "//_MEMORY": "neuron_chip has no internal memory instantiated (see rtl/neuron_chip.sv's header) -- the memory bus is chip pins. If a project consuming this config wants on-die memory beyond registers/flip-flops, that requires a real SRAM macro integrated separately (LEF/liberty/GDS for that macro added to this config's FP_PDN/macro-placement settings) -- not something this skeleton does.",
+
+  "FP_PDN_MULTILAYER": true,
+  "RUN_LINTER": false,
+  "//_RUN_LINTER": "false because this repo has its own, more thorough lint gate (scripts/lint.sh, Verilator) that already runs as part of CI -- not because linting is skipped."
+}

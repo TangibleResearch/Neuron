@@ -1,0 +1,66 @@
+# synth/synth.ys
+#
+# Generic (technology-agnostic) Yosys synthesis of rtl/neuron_chip.sv --
+# the ASIC-oriented top level (see rtl/neuron_chip.sv's header) -- and its
+# real functional-unit hierarchy (register file, ALU, MAC, matrix engine,
+# matrix register file, status register, decode, the fetch/decode/execute
+# control unit). No simulation-only infrastructure (testbenches, sim/,
+# tb/, memory.sv's/memory_sync.sv's $readmemh loader) is part of this
+# target -- see docs/MEMORY_INTERFACE.md and asic/README.md for why the
+# memory bus is left as chip pins here rather than an internal SRAM model.
+#
+# This proves the design PARSES, ELABORATES, and SYNTHESIZES cleanly --
+# `check` (run both before and after synth) reports multi-driver nets,
+# combinational loops, and undriven signals -- and reports cell/register/
+# memory statistics via `stat`. It does NOT target a specific standard-
+# cell library or PDK (none is committed to this repo -- see
+# asic/README.md), so the resulting netlist/statistics are a
+# synthesizability proof and a generic-logic area estimate, not a tapeout
+# artifact and not a timing signoff. Run via scripts/synth_check.sh, which
+# sets the working directory (repo root) and creates build/reports/ this
+# script writes into.
+#
+# `-DSYNTHESIS` matches the `` `ifndef SYNTHESIS `` guards in
+# rtl/memory.sv/rtl/memory_sync.sv around their simulation-only
+# load_bytes/$readmemh task (neuron_chip doesn't instantiate either
+# module, so this mostly future-proofs the flag for anyone who points
+# this script at a config that does).
+
+read_verilog -sv -DSYNTHESIS rtl/isa_pkg.sv
+read_verilog -sv -DSYNTHESIS rtl/register.sv
+read_verilog -sv -DSYNTHESIS rtl/alu.sv
+read_verilog -sv -DSYNTHESIS rtl/clock.sv
+read_verilog -sv -DSYNTHESIS rtl/status_reg.sv
+read_verilog -sv -DSYNTHESIS rtl/mac.sv
+read_verilog -sv -DSYNTHESIS rtl/matrix_regfile.sv
+read_verilog -sv -DSYNTHESIS rtl/matrix_engine.sv
+read_verilog -sv -DSYNTHESIS rtl/decode.sv
+read_verilog -sv -DSYNTHESIS rtl/neuron_core.sv
+read_verilog -sv -DSYNTHESIS rtl/neuron_chip.sv
+
+# Elaborate with neuron_chip as top; -check fails the run on an undriven
+# or multiply-driven port at the hierarchy level, and on unresolved
+# submodule references (a real MODMISSING-equivalent for synthesis).
+hierarchy -check -top neuron_chip
+
+# Canonicalize processes (always_comb/always_ff -> RTLIL processes), then
+# a first structural check on the design as elaborated, before synthesis
+# has touched anything.
+proc
+check
+
+# Generic technology-independent synthesis: maps always_comb/always_ff
+# processes down to generic gates/flops and flattens the hierarchy for a
+# single combined statistics report. No target cell library is selected,
+# so the cell-count/area numbers below are against Yosys's generic gate
+# library ("generic logic"), not a real process's standard cells.
+synth -top neuron_chip
+
+# Post-synthesis structural check: catches multiple drivers, undriven
+# nets, and combinational loops in the synthesized netlist.
+check
+
+stat -top neuron_chip
+
+write_verilog -noattr build/reports/neuron_chip.synth.v
+write_json build/reports/neuron_chip.synth.json
